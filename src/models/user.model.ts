@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import bcrypt from "bcryptjs";
 
 export interface IAddress {
     name: string;
@@ -7,15 +8,22 @@ export interface IAddress {
 }
 
 export interface IUser extends Document {
-    clerkId: string;
+    firstName: string;
+    lastName: string;
     email: string;
-    fullName?: string;
-    phoneNumber?: string;
-    role: "customer" | "rider";
-    isOnboarded: boolean;
-    addresses: mongoose.Types.DocumentArray<IAddress>;
+    phoneNumber: string;
+    password: string;
+    role: "customer" | "rider" | "admin";
+    isOnline: boolean;
+    currentLocation?: {
+        type: "Point";
+        coordinates: [number, number];
+    };
+    lastLocationUpdate?: Date;
     createdAt: Date;
+    isOnboarded: boolean;
     updatedAt: Date;
+    comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
 const AddressSchema = new Schema<IAddress>({
@@ -26,15 +34,49 @@ const AddressSchema = new Schema<IAddress>({
 
 const UserSchema: Schema = new Schema(
     {
-        clerkId: { type: String, required: true, unique: true },
+        firstName: { type: String, required: true },
+        lastName: { type: String, required: true },
         email: { type: String, required: true, unique: true },
-        fullName: { type: String },
-        phoneNumber: { type: String },
-        role: { type: String, enum: ["customer", "rider"], required: true },
+        phoneNumber: { type: String, required: true },
+        password: { type: String, required: true, select: false },
+        role: {
+            type: String,
+            enum: ["customer", "rider", "admin"],
+            required: true,
+        },
         isOnboarded: { type: Boolean, default: false },
-        addresses: { type: [AddressSchema], default: [] },
-    },
+        isOnline: { type: Boolean, default: false },
+        lastLocationUpdate: { type: Date },
+        currentLocation: {
+            type: {
+                type: String,
+                enum: ["Point"],
+                default: "Point",
+            },
+            coordinates: {
+                type: [Number],
+            },
+        },
+    addresses: { type: [AddressSchema], default: [] },
+},
     { timestamps: true },
 );
+
+UserSchema.index({ currentLocation: "2dsphere" });
+
+// Hash password before saving
+UserSchema.pre("save", async function (next) {
+    if (!this.isModified("password")) return next();
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password as string, salt);
+    next();
+});
+
+// Compare password method
+UserSchema.methods.comparePassword = async function (
+    candidatePassword: string,
+): Promise<boolean> {
+    return bcrypt.compare(candidatePassword, this.password);
+};
 
 export default mongoose.model<IUser>("User", UserSchema);

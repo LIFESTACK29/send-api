@@ -1,108 +1,77 @@
-import { Request, Response, RequestHandler } from "express";
+import { Response, RequestHandler } from "express";
 import User from "../models/user.model";
+import { AuthRequest } from "../types/user.type";
 
-export const getAuthStatus: RequestHandler = async (req, res) => {
+/**
+ * @desc    Get current user profile
+ * @route   GET /api/v1/user/profile
+ * @access  Private
+ */
+export const getProfile: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
     try {
-        const { clerkId } = req.params;
+        const userId = req.user?.userId;
 
-        console.log("Clerk ID:", req.params);
-
-        if (!clerkId) {
-            res.status(400).json({ message: "Clerk ID is required" });
+        if (!userId) {
+            res.status(401).json({ message: "Unauthorized" });
             return;
         }
 
-        const user = await User.findOne({ clerkId });
-
-        if (!user) {
-            res.status(200).json({ exists: false });
-            return;
-        }
-
-        res.status(200).json({
-            exists: true,
-            user: {
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                email: user.email,
-                fullName: user.fullName,
-                phoneNumber: user.phoneNumber,
-                addresses: user.addresses,
-            },
-        });
-        return;
-    } catch (error: any) {
-        console.error("Error in getAuthStatus:", error);
-        res.status(500).json({ message: "Internal server error" });
-        return;
-    }
-};
-
-export const onboardUser: RequestHandler = async (req, res) => {
-    console.log("HIT HERE");
-    try {
-        const { clerkId, email, fullName, phoneNumber, role } = req.body;
-
-        console.log("BODY: ", req.body);
-
-        if (!clerkId || !email || !role) {
-            res.status(400).json({ message: "Missing required fields" });
-            return;
-        }
-
-        let user = await User.findOne({ clerkId });
-
-        if (user) {
-            user.fullName = fullName || user.fullName;
-            user.phoneNumber = phoneNumber || user.phoneNumber;
-            user.role = role;
-            user.isOnboarded = true;
-            await user.save();
-        } else {
-            user = await User.create({
-                clerkId,
-                email,
-                fullName,
-                phoneNumber,
-                role,
-                isOnboarded: true,
-            });
-        }
-
-        res.status(201).json({
-            message: "User onboarded successfully",
-            user: {
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-            },
-        });
-        return;
-    } catch (error: any) {
-        console.error("Error in onboardUser:", error);
-        res.status(500).json({ message: "Internal server error" });
-        return;
-    }
-};
-
-export const updateProfile: RequestHandler = async (req, res) => {
-    try {
-        const { clerkId } = req.params;
-        const { fullName, phoneNumber } = req.body;
-
-        if (!clerkId) {
-            res.status(400).json({ message: "Clerk ID is required" });
-            return;
-        }
-
-        const user = await User.findOne({ clerkId });
+        const user = await User.findById(userId);
 
         if (!user) {
             res.status(404).json({ message: "User not found" });
             return;
         }
 
-        // Update fields if provided
-        if (fullName !== undefined) user.fullName = fullName;
+        res.status(200).json({
+            user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+                role: user.role,
+                isOnboarded: user.isOnboarded,
+                // addresses: user.addresses,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error in getProfile:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+/**
+ * @desc    Update user profile
+ * @route   PATCH /api/v1/user/profile
+ * @access  Private
+ */
+export const updateProfile: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
+    try {
+        const userId = req.user?.userId;
+
+        if (!userId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const { firstName, lastName, phoneNumber } = req.body;
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        if (firstName !== undefined) user.firstName = firstName;
+        if (lastName !== undefined) user.lastName = lastName;
         if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
 
         await user.save();
@@ -110,43 +79,48 @@ export const updateProfile: RequestHandler = async (req, res) => {
         res.status(200).json({
             message: "Profile updated successfully",
             user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
                 role: user.role,
                 isOnboarded: user.isOnboarded,
-                email: user.email,
-                fullName: user.fullName,
-                phoneNumber: user.phoneNumber,
-                addresses: user.addresses,
+                // addresses: user.addresses,
             },
         });
-        return;
     } catch (error: any) {
         console.error("Error in updateProfile:", error);
         res.status(500).json({ message: "Internal server error" });
-        return;
     }
 };
 
-export const addAddress: RequestHandler = async (req, res) => {
+/**
+ * @desc    Add an address
+ * @route   POST /api/v1/user/addresses
+ * @access  Private
+ */
+export const addAddress: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
     try {
-        const { clerkId } = req.params;
-        const { name, location, landmark } = req.body;
+        const userId = req.user?.userId;
 
-        if (!clerkId) {
-            res.status(400).json({ message: "Clerk ID is required" });
+        if (!userId) {
+            res.status(401).json({ message: "Unauthorized" });
             return;
         }
+
+        const { name, location, landmark } = req.body;
 
         if (!name || !location) {
             res.status(400).json({ message: "Name and location are required" });
             return;
         }
 
-        console.log(
-            `[DEBUG] Attempting to find user with clerkId: "${clerkId}"`,
-        );
-
-        const user = await User.findOneAndUpdate(
-            { clerkId },
+        const user = await User.findByIdAndUpdate(
+            userId,
             { $push: { addresses: { name, location, landmark } } },
             { new: true, runValidators: true },
         );
@@ -159,33 +133,43 @@ export const addAddress: RequestHandler = async (req, res) => {
         res.status(201).json({
             message: "Address added successfully",
             user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
                 role: user.role,
                 isOnboarded: user.isOnboarded,
-                email: user.email,
-                fullName: user.fullName,
-                phoneNumber: user.phoneNumber,
-                addresses: user.addresses,
+                // addresses: user.addresses,
             },
         });
-        return;
     } catch (error: any) {
         console.error("Error in addAddress:", error);
         res.status(500).json({ message: "Internal server error" });
-        return;
     }
 };
 
-export const editAddress: RequestHandler = async (req, res) => {
+/**
+ * @desc    Edit an address
+ * @route   PUT /api/v1/user/addresses/:addressId
+ * @access  Private
+ */
+export const editAddress: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
     try {
-        const { clerkId, addressId } = req.params;
-        const { name, location, landmark } = req.body;
+        const userId = req.user?.userId;
+        const { addressId } = req.params;
 
-        if (!clerkId || !addressId) {
+        if (!userId || !addressId) {
             res.status(400).json({
-                message: "Clerk ID and Address ID are required",
+                message: "Address ID is required",
             });
             return;
         }
+
+        const { name, location, landmark } = req.body;
 
         const updateFields: any = {};
         if (name !== undefined) updateFields["addresses.$[elem].name"] = name;
@@ -202,7 +186,7 @@ export const editAddress: RequestHandler = async (req, res) => {
         }
 
         const user = await User.findOneAndUpdate(
-            { clerkId },
+            { _id: userId },
             { $set: updateFields },
             {
                 new: true,
@@ -219,35 +203,44 @@ export const editAddress: RequestHandler = async (req, res) => {
         res.status(200).json({
             message: "Address updated successfully",
             user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
                 role: user.role,
                 isOnboarded: user.isOnboarded,
-                email: user.email,
-                fullName: user.fullName,
-                phoneNumber: user.phoneNumber,
-                addresses: user.addresses,
+                // addresses: user.addresses,
             },
         });
-        return;
     } catch (error: any) {
         console.error("Error in editAddress:", error);
         res.status(500).json({ message: "Internal server error" });
-        return;
     }
 };
 
-export const deleteAddress: RequestHandler = async (req, res) => {
+/**
+ * @desc    Delete an address
+ * @route   DELETE /api/v1/user/addresses/:addressId
+ * @access  Private
+ */
+export const deleteAddress: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
     try {
-        const { clerkId, addressId } = req.params;
+        const userId = req.user?.userId;
+        const { addressId } = req.params;
 
-        if (!clerkId || !addressId) {
+        if (!userId || !addressId) {
             res.status(400).json({
-                message: "Clerk ID and Address ID are required",
+                message: "Address ID is required",
             });
             return;
         }
 
         const user = await User.findOneAndUpdate(
-            { clerkId },
+            { _id: userId },
             { $pull: { addresses: { _id: addressId } } },
             { new: true },
         );
@@ -260,18 +253,18 @@ export const deleteAddress: RequestHandler = async (req, res) => {
         res.status(200).json({
             message: "Address deleted successfully",
             user: {
+                id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
                 role: user.role,
                 isOnboarded: user.isOnboarded,
-                email: user.email,
-                fullName: user.fullName,
-                phoneNumber: user.phoneNumber,
-                addresses: user.addresses,
+                // addresses: user.addresses,
             },
         });
-        return;
     } catch (error: any) {
         console.error("Error in deleteAddress:", error);
         res.status(500).json({ message: "Internal server error" });
-        return;
     }
 };

@@ -1,22 +1,65 @@
-import { clerkMiddleware, requireAuth, getAuth } from "@clerk/express";
-import { Request } from "express";
+import { Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import { AuthRequest, AuthPayload } from "../types/user.type";
 
 /**
- * Clerk middleware — attaches auth info to every request.
- * Use this globally in app.ts.
+ * Authenticate middleware — verifies JWT from Authorization header
+ * and attaches user payload to req.user
  */
-export { clerkMiddleware };
+export const authenticate = (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): void => {
+    try {
+        const authHeader = req.headers.authorization;
+
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+            res.status(401).json({ message: "Unauthorized — no token provided" });
+            return;
+        }
+
+        const token = authHeader.split(" ")[1];
+        const decoded = jwt.verify(
+            token,
+            process.env.JWT_SECRET as string,
+        ) as AuthPayload;
+
+        req.user = {
+            userId: decoded.userId,
+            role: decoded.role,
+        };
+
+        next();
+    } catch (error) {
+        res.status(401).json({ message: "Unauthorized — invalid token" });
+        return;
+    }
+};
 
 /**
- * Protect middleware — blocks unauthenticated requests (401).
- * Use on specific routes/routers that require auth.
+ * Authorize middleware — restricts access to specific roles.
+ * Must be used AFTER authenticate.
  */
-export { requireAuth };
+export const authorize = (...roles: string[]) => {
+    return (req: AuthRequest, res: Response, next: NextFunction): void => {
+        if (!req.user) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        if (!roles.includes(req.user.role)) {
+            res.status(403).json({ message: "Forbidden — insufficient permissions" });
+            return;
+        }
+
+        next();
+    };
+};
 
 /**
- * Helper to get the authenticated user's Clerk ID from the request.
+ * Helper to get the authenticated user's MongoDB _id from the request.
  */
-export const getClerkUserId = (req: Request): string | null => {
-    const auth = getAuth(req);
-    return auth?.userId || null;
+export const getUserId = (req: AuthRequest): string | null => {
+    return req.user?.userId || null;
 };

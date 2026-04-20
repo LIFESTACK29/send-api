@@ -1,11 +1,19 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+export interface ILocation {
+    address: string;
+    lat: number;
+    lng: number;
+}
+
 export interface IDelivery extends Document {
     trackingId: string;
-    pickupLocation: string;
-    dropoffLocation: string;
+    pickupLocation: ILocation;
+    dropoffLocation: ILocation;
     packageType: string;
     deliveryNote?: string;
+    itemImage?: string;
+    distance?: number;
     fee: number;
     status: "PENDING" | "ONGOING" | "DELIVERED" | "CANCELLED";
     customerId: string;
@@ -22,12 +30,14 @@ const DeliverySchema: Schema = new Schema(
             unique: true,
         },
         pickupLocation: {
-            type: String,
-            required: true,
+            address: { type: String, required: true },
+            lat: { type: Number, required: true },
+            lng: { type: Number, required: true },
         },
         dropoffLocation: {
-            type: String,
-            required: true,
+            address: { type: String, required: true },
+            lat: { type: Number, required: true },
+            lng: { type: Number, required: true },
         },
         packageType: {
             type: String,
@@ -36,6 +46,12 @@ const DeliverySchema: Schema = new Schema(
         deliveryNote: {
             type: String,
             default: "",
+        },
+        itemImage: {
+            type: String,
+        },
+        distance: {
+            type: Number,
         },
         fee: {
             type: Number,
@@ -48,10 +64,12 @@ const DeliverySchema: Schema = new Schema(
         },
         customerId: {
             type: String,
+            ref: "User",
             required: true,
         },
         riderId: {
             type: String,
+            ref: "User",
         },
     },
     { timestamps: true }

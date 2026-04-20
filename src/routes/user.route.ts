@@ -1,36 +1,27 @@
 import { Router } from "express";
 import {
-    getAuthStatus,
-    onboardUser,
+    getProfile,
     updateProfile,
     addAddress,
     editAddress,
     deleteAddress,
 } from "../controllers/user.controller";
-import { ClerkExpressRequireAuth } from "@clerk/clerk-sdk-node";
+import { authenticate } from "../middlewares/auth.middleware";
 
 const router = Router();
 
 router.get("/", (req, res) => {
     res.json({
-        message: "Welcome to RahaSend API - User 123",
+        message: "Welcome to RahaSend API - User",
     });
 });
 
-router.get("/status/:clerkId", getAuthStatus);
-router.post("/onboard", onboardUser);
-router.patch("/profile/:clerkId", ClerkExpressRequireAuth(), updateProfile);
+// All user routes are protected
+router.get("/profile", authenticate, getProfile);
+router.patch("/profile", authenticate, updateProfile);
 
-router.post("/addresses/:clerkId", ClerkExpressRequireAuth(), addAddress);
-router.put(
-    "/addresses/:clerkId/:addressId",
-    ClerkExpressRequireAuth(),
-    editAddress,
-);
-router.delete(
-    "/addresses/:clerkId/:addressId",
-    ClerkExpressRequireAuth(),
-    deleteAddress,
-);
+router.post("/addresses", authenticate, addAddress);
+router.put("/addresses/:addressId", authenticate, editAddress);
+router.delete("/addresses/:addressId", authenticate, deleteAddress);
 
 export default router;
