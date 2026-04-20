@@ -8,6 +8,7 @@ import { AuthRequest } from "../types/user.type";
 import { getUserId } from "../middlewares/auth.middleware";
 import * as paystackService from "../services/paystack.service";
 import Log from "../models/log.model";
+import { emitToRoom } from "../services/socket.service";
 import {
     PaystackWebhookPayload,
     ChargeData,
@@ -233,10 +234,12 @@ export const handleWebhook = async (
                 await handleTransferReversed(data as TransferData);
                 break;
 
+            case "dedicatedaccount.assign.success":
             case "dedicatedaccount.assignment.success":
-                await handleAccountAssignSuccess(data as DedicatedAccountData);
+                await handleAccountAssignSuccess(payload.event, data as DedicatedAccountData);
                 break;
 
+            case "dedicatedaccount.assign.failed":
             case "dedicatedaccount.assignment.failed":
                 await handleAccountAssignFailed(data as DedicatedAccountData);
                 break;
@@ -358,11 +361,11 @@ const handleTransferReversed = async (data: TransferData) => {
  * Handle DVA Assign Success
  * This is where the wallet is officially "activated" or created in our DB
  */
-const handleAccountAssignSuccess = async (data: DedicatedAccountData) => {
+const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountData) => {
     const { customer, dedicated_account } = data;
     if (!dedicated_account) return;
 
-    console.log(`[Webhook] DVA Assigned for ${customer.email}: ${dedicated_account.account_number}`);
+    console.log(`[Webhook] ${event} for ${customer.email}: ${dedicated_account.account_number}`);
 
     // High reliability check: Find or create wallet
     let wallet = await Wallet.findOne({ paystackCustomerCode: customer.customer_code });
@@ -392,6 +395,18 @@ const handleAccountAssignSuccess = async (data: DedicatedAccountData) => {
         await wallet.save();
         console.log(`[Webhook] Wallet updated for existing DVA: ${wallet._id}`);
     }
+
+    // Broadcast to user room via Socket.io
+    emitToRoom(`user-${wallet.userId}`, "wallet_created", {
+        message: "Your wallet has been created successfully!",
+        wallet: {
+            id: wallet._id,
+            balance: wallet.balance,
+            accountNumber: wallet.dedicatedAccountNumber,
+            bankName: wallet.dedicatedBankName,
+            accountName: wallet.dedicatedAccountName,
+        }
+    });
 };
 
 /**

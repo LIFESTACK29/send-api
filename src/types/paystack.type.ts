@@ -146,6 +146,8 @@ export interface ChargeData {
 export type PaystackEvent =
     | "customeridentification.failed"
     | "customeridentification.success"
+    | "dedicatedaccount.assign.failed"
+    | "dedicatedaccount.assign.success"
     | "dedicatedaccount.assignment.failed"
     | "dedicatedaccount.assignment.success"
     | "transfer.success"
