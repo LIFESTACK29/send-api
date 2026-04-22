@@ -9,6 +9,7 @@ import { getUserId } from "../middlewares/auth.middleware";
 import * as paystackService from "../services/paystack.service";
 import Log from "../models/log.model";
 import { emitToRoom } from "../services/socket.service";
+import { sendPushNotification } from "../services/notification.service";
 import {
     PaystackWebhookPayload,
     ChargeData,
@@ -18,6 +19,13 @@ import {
 
 const PLATFORM_COMMISSION_RATE = 0.1; // 10%
 const MIN_WITHDRAWAL_AMOUNT = 100000; // ₦1,000 in kobo
+
+const maskAccountNumber = (accountNumber?: string): string => {
+    if (!accountNumber) return "";
+    if (accountNumber.length <= 4) return accountNumber;
+    const visibleDigits = accountNumber.slice(-4);
+    return `${"*".repeat(accountNumber.length - 4)}${visibleDigits}`;
+};
 
 /**
  * @desc    Create wallet + Paystack customer + DVA
@@ -64,8 +72,6 @@ export const createWallet = async (
             preferred_bank: "test-bank",
         });
 
-        console.log("[Wallet] Paystack Assign Response:", assignResponse);
-
         const dedicatedAccount = assignResponse.data;
 
         // 2. Create wallet in DB
@@ -89,10 +95,6 @@ export const createWallet = async (
             },
         });
     } catch (error: any) {
-        console.error(
-            "Error creating wallet:",
-            error.response?.data || error.message,
-        );
         next(error);
     }
 };
@@ -131,6 +133,57 @@ export const getWalletBalance = async (
                 accountNumber: wallet.dedicatedAccountNumber,
                 bankName: wallet.dedicatedBankName,
                 accountName: wallet.dedicatedAccountName,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * @desc    Get wallet status for dashboard rendering (without exposing full account number)
+ * @route   GET /api/v1/wallet/status
+ * @access  Private
+ */
+export const getWalletStatus = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const userId = getUserId(req);
+        if (!userId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const wallet = await Wallet.findOne({ userId });
+
+        if (!wallet) {
+            res.status(200).json({
+                hasWallet: false,
+                walletStatus: "not_created",
+                cta: "create_wallet",
+            });
+            return;
+        }
+
+        res.status(200).json({
+            hasWallet: true,
+            walletStatus: "active",
+            wallet: {
+                id: wallet._id,
+                balance: wallet.balance,
+                balanceInNaira: wallet.balance / 100,
+                accountPreview: {
+                    maskedAccountNumber: maskAccountNumber(
+                        wallet.dedicatedAccountNumber,
+                    ),
+                    last4:
+                        wallet.dedicatedAccountNumber?.slice(-4) || "",
+                    bankName: wallet.dedicatedBankName || "",
+                    accountName: wallet.dedicatedAccountName || "",
+                },
             },
         });
     } catch (error) {
@@ -206,8 +259,6 @@ export const handleWebhook = async (
 
         const payload = req.body as unknown as PaystackWebhookPayload;
         const { event, data } = payload;
-        console.log(`[Webhook] Received event: ${event}`);
-        console.log(`[Webhook] Received data: ${JSON.stringify(data)}`);
         // 2. Audit Log (as requested)
         await Log.create({
             event,
@@ -250,7 +301,6 @@ export const handleWebhook = async (
 
         res.status(200).json({ message: "Webhook received" });
     } catch (error) {
-        console.error("[Webhook] Error processing event:", error);
         res.status(200).json({ message: "Webhook received with errors" });
     }
 };
@@ -264,16 +314,12 @@ const handleChargeSuccess = async (data: any) => {
     // Prevent duplicate processing
     const existingTx = await Transaction.findOne({ reference });
     if (existingTx) {
-        console.log(
-            `[Webhook] Duplicate charge.success for reference: ${reference}`,
-        );
         return;
     }
 
     // Find wallet by Paystack customer code
     const customerCode = data.customer?.customer_code;
     if (!customerCode) {
-        console.log("[Webhook] No customer code in charge.success event");
         return;
     }
 
@@ -282,9 +328,6 @@ const handleChargeSuccess = async (data: any) => {
     });
 
     if (!wallet) {
-        console.log(
-            `[Webhook] No wallet found for customer: ${customerCode}`,
-        );
         return;
     }
 
@@ -310,9 +353,6 @@ const handleChargeSuccess = async (data: any) => {
         },
     });
 
-    console.log(
-        `[Webhook] Credited ₦${amountInKobo / 100} to wallet ${wallet._id}`,
-    );
 };
 
 /**
@@ -327,7 +367,6 @@ const handleTransferSuccess = async (data: TransferData) => {
     transaction.status = "success";
     await transaction.save();
 
-    console.log(`[Webhook] Transfer successful: ${reference}`);
 };
 
 /**
@@ -365,8 +404,6 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
     const { customer, dedicated_account } = data;
     if (!dedicated_account) return;
 
-    console.log(`[Webhook] ${event} for ${customer.email}: ${dedicated_account.account_number}`);
-
     // High reliability check: Find or create wallet
     let wallet = await Wallet.findOne({ paystackCustomerCode: customer.customer_code });
 
@@ -382,9 +419,7 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
                 dedicatedAccountName: dedicated_account.account_name,
                 dedicatedAccountReference: dedicated_account.assignment?.toString() || "assigned",
             });
-            console.log(`[Webhook] Wallet created for new DVA: ${wallet._id}`);
         } else {
-            console.error(`[Webhook] User with email ${customer.email} not found. Cannot create wallet.`);
             return;
         }
     } else {
@@ -393,7 +428,6 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
         wallet.dedicatedBankName = dedicated_account.bank.name;
         wallet.dedicatedAccountName = dedicated_account.account_name;
         await wallet.save();
-        console.log(`[Webhook] Wallet updated for existing DVA: ${wallet._id}`);
     }
 
     // Broadcast to user room via Socket.io
@@ -406,6 +440,17 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
             bankName: wallet.dedicatedBankName,
             accountName: wallet.dedicatedAccountName,
         }
+    });
+
+    // 4. Send Push Notification
+    await sendPushNotification(wallet.userId as string, {
+        title: "Wallet Created! 🎉",
+        body: `Your RahaSend wallet is ready. Account: ${wallet.dedicatedAccountNumber} (${wallet.dedicatedBankName})`,
+        data: {
+            type: "wallet_creation",
+            accountNumber: wallet.dedicatedAccountNumber,
+            bankName: wallet.dedicatedBankName,
+        },
     });
 };
 
@@ -439,10 +484,6 @@ export const getBanks = async (
             })),
         });
     } catch (error: any) {
-        console.error(
-            "Error fetching banks:",
-            error.response?.data || error.message,
-        );
         next(error);
     }
 };
@@ -478,11 +519,6 @@ export const resolveAccount = async (
             bankId: response.data.bank_id,
         });
     } catch (error: any) {
-        console.error(
-            "Error resolving account:",
-            error.response?.data || error.message,
-        );
-
         if (error.response?.status === 422) {
             res.status(422).json({
                 message: "Could not resolve account. Please check the details.",
@@ -553,10 +589,6 @@ export const saveBankAccount = async (
             },
         });
     } catch (error: any) {
-        console.error(
-            "Error saving bank account:",
-            error.response?.data || error.message,
-        );
         next(error);
     }
 };
@@ -691,10 +723,6 @@ export const withdraw = async (
             transaction.status = "failed";
             await transaction.save();
 
-            console.error(
-                "Transfer initiation failed:",
-                transferError.response?.data || transferError.message,
-            );
             res.status(500).json({
                 message: "Withdrawal failed. Your wallet has been refunded.",
             });
@@ -780,10 +808,6 @@ export const processDeliveryPayment = async (
         metadata: { deliveryId, platformFee, totalFee: feeInKobo },
     });
 
-    console.log(
-        `[Payment] Delivery ${deliveryId}: Customer debited ₦${feeInKobo / 100}, Rider credited ₦${riderEarning / 100}, Platform fee ₦${platformFee / 100}`,
-    );
-
     return { success: true, message: "Payment processed successfully" };
 };
 
@@ -797,7 +821,6 @@ export const handleCallback = async (
     res: Response,
 ): Promise<void> => {
     const { trxref, reference } = req.query;
-    console.log(`[Callback] Redirect hit with reference: ${reference || trxref}`);
 
     // Since most DVA work happens via webhooks, we just show a success message or redirect to app
     res.send(`

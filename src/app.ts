@@ -7,6 +7,8 @@ import authRoute from "./routes/auth.route";
 import userRoute from "./routes/user.route";
 import deliveryRoute from "./routes/delivery.route";
 import walletRoute from "./routes/wallet.route";
+import vehicleRoute from "./routes/vehicle.route";
+import documentRoute from "./routes/document.route";
 import errorMiddleware from "./middlewares/error.middleware";
 
 dotenv.config();
@@ -29,6 +31,8 @@ app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/user", userRoute);
 app.use("/api/v1/deliveries", deliveryRoute);
 app.use("/api/v1/wallet", walletRoute);
+app.use("/api/v1/riders", vehicleRoute);
+app.use("/api/v1/riders", documentRoute);
 
 // Error handler
 app.use(errorMiddleware);

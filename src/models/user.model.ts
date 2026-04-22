@@ -20,9 +20,14 @@ export interface IUser extends Document {
         coordinates: [number, number];
     };
     lastLocationUpdate?: Date;
+    pushToken?: string;
     createdAt: Date;
     isOnboarded: boolean;
     updatedAt: Date;
+    // Rider-specific fields
+    riderStatus?: "incomplete" | "pending_verification" | "active" | "rejected";
+    profileImageUrl?: string;
+    verificationNotes?: string;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -57,8 +62,17 @@ const UserSchema: Schema = new Schema(
                 type: [Number],
             },
         },
-    addresses: { type: [AddressSchema], default: [] },
-},
+        addresses: { type: [AddressSchema], default: [] },
+        pushToken: { type: String },
+        // Rider-specific fields
+        riderStatus: {
+            type: String,
+            enum: ["incomplete", "pending_verification", "active", "rejected"],
+            default: "incomplete",
+        },
+        profileImageUrl: { type: String },
+        verificationNotes: { type: String },
+    },
     { timestamps: true },
 );
 

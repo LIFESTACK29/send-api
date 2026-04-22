@@ -5,6 +5,7 @@ import {
     addAddress,
     editAddress,
     deleteAddress,
+    updatePushToken,
 } from "../controllers/user.controller";
 import { authenticate } from "../middlewares/auth.middleware";
 
@@ -19,6 +20,7 @@ router.get("/", (req, res) => {
 // All user routes are protected
 router.get("/profile", authenticate, getProfile);
 router.patch("/profile", authenticate, updateProfile);
+router.patch("/push-token", authenticate, updatePushToken);
 
 router.post("/addresses", authenticate, addAddress);
 router.put("/addresses/:addressId", authenticate, editAddress);

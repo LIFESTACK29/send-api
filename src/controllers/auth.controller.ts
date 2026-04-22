@@ -4,6 +4,8 @@ import User from "../models/user.model";
 import Otp from "../models/otp.model";
 import { sendOtpEmail } from "../services/email.service";
 import { AuthRequest } from "../types/user.type";
+import { uploadToStorage } from "../middlewares/upload.middleware";
+import { CatchAsync } from "../utils/catchasync.util";
 
 /**
  * Generate a random 6-digit OTP code
@@ -48,7 +50,14 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
         const { firstName, lastName, email, phoneNumber, password, role } =
             req.body;
 
-        if (!firstName || !lastName || !email || !phoneNumber || !password || !role) {
+        if (
+            !firstName ||
+            !lastName ||
+            !email ||
+            !phoneNumber ||
+            !password ||
+            !role
+        ) {
             res.status(400).json({ message: "All fields are required" });
             return;
         }
@@ -96,7 +105,8 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
         await createAndSendOtp(user._id.toString(), user.email);
 
         res.status(201).json({
-            message: "Registration successful. Please verify your email with the OTP sent.",
+            message:
+                "Registration successful. Please verify your email with the OTP sent.",
             isOnboarded: false,
             userId: user._id,
         });
@@ -119,7 +129,9 @@ export const verifyOtp: RequestHandler = async (
         const { userId, code } = req.body;
 
         if (!userId || !code) {
-            res.status(400).json({ message: "User ID and OTP code are required" });
+            res.status(400).json({
+                message: "User ID and OTP code are required",
+            });
             return;
         }
 
@@ -220,9 +232,11 @@ export const resendOtp: RequestHandler = async (
 export const login: RequestHandler = async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
-console.log(email)
+        console.log(email);
         if (!email || !password) {
-            res.status(400).json({ message: "Email and password are required" });
+            res.status(400).json({
+                message: "Email and password are required",
+            });
             return;
         }
 
@@ -310,3 +324,55 @@ export const getMe: RequestHandler = async (
         res.status(500).json({ message: "Internal server error" });
     }
 };
+
+/**
+ * @desc    Upload profile image (for riders during onboarding)
+ * @route   POST /api/v1/auth/upload-profile-image
+ * @access  Private
+ */
+export const uploadProfileImage: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
+        if (!req.file) {
+            res.status(400).json({
+                success: false,
+                message: "No image file provided",
+            });
+            return;
+        }
+
+        const userId = req.user?.userId;
+        if (!userId) {
+            res.status(401).json({
+                success: false,
+                message: "Unauthorized",
+            });
+            return;
+        }
+
+        // Upload to S3
+        const imageUrl = await uploadToStorage(req.file, `profiles/${userId}`);
+
+        // Update user profile
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { profileImageUrl: imageUrl },
+            { new: true },
+        );
+
+        if (!user) {
+            res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+            return;
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Profile image uploaded successfully",
+            data: {
+                profileImageUrl: imageUrl,
+            },
+        });
+    },
+);

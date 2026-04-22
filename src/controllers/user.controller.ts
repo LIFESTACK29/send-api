@@ -268,3 +268,46 @@ export const deleteAddress: RequestHandler = async (
         res.status(500).json({ message: "Internal server error" });
     }
 };
+
+/**
+ * @desc    Update user's push token
+ * @route   PATCH /api/v1/user/push-token
+ * @access  Private
+ */
+export const updatePushToken: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
+    try {
+        const userId = req.user?.userId;
+        const { pushToken } = req.body;
+
+        if (!userId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        if (!pushToken) {
+            res.status(400).json({ message: "Push token is required" });
+            return;
+        }
+
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { pushToken },
+            { new: true }
+        );
+
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
+        res.status(200).json({
+            message: "Push token updated successfully",
+        });
+    } catch (error: any) {
+        console.error("Error in updatePushToken:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};

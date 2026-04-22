@@ -22,7 +22,7 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
             Math.sin(dLon / 2) *
             Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
+    return R * c; 
 };
 
 /**
@@ -51,7 +51,7 @@ export const calculateDeliveryFee = async (
         );
 
         // Fee = 1500 (base) + 200 per km
-        const fee = Math.ceil(1500 + distance * 200);
+        const fee = Math.ceil(1000 + distance * 200);
 
         res.status(200).json({
             distance,
@@ -78,7 +78,6 @@ export const requestDelivery = async (
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        console.log(req.body);
         let {
             pickupLocation,
             dropoffLocation,
@@ -111,7 +110,7 @@ export const requestDelivery = async (
         );
 
         // Fee = 1500 (base) + 200 per km
-        const calculatedFee = Math.ceil(1500 + distance * 200);
+        const calculatedFee = Math.ceil(1000 + distance * 200);
 
         // Handle image upload if exists
         let itemImage = "";

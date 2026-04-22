@@ -3,6 +3,7 @@ import { authenticate } from "../middlewares/auth.middleware";
 import {
     createWallet,
     getWalletBalance,
+    getWalletStatus,
     getTransactions,
     handleWebhook,
     handleCallback,
@@ -23,6 +24,7 @@ router.get("/callback", handleCallback);
 router.use(authenticate);
 
 router.post("/create", createWallet);
+router.get("/status", getWalletStatus);
 router.get("/balance", getWalletBalance);
 router.get("/transactions", getTransactions);
 router.get("/banks", getBanks);
