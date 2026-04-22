@@ -288,7 +288,14 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
         const vehicleComplete =
             vehicles.length > 0 &&
             vehicles.every(
-                (v) => v.brand && v.model && v.year && v.color && v.imageUrl,
+                (v) =>
+                    Boolean(
+                        v.brand &&
+                            v.get("model") &&
+                            v.year &&
+                            v.color &&
+                            v.imageUrl,
+                    ),
             );
 
         // Check documents
@@ -379,7 +386,10 @@ export const submitForVerification: RequestHandler = CatchAsync(
         }
 
         const vehicleComplete = vehicles.every(
-            (v) => v.brand && v.model && v.year && v.color && v.imageUrl,
+            (v) =>
+                Boolean(
+                    v.brand && v.get("model") && v.year && v.color && v.imageUrl,
+                ),
         );
 
         if (!vehicleComplete) {

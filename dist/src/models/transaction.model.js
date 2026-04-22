@@ -34,24 +34,49 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const OtpSchema = new mongoose_1.Schema({
+const TransactionSchema = new mongoose_1.Schema({
     userId: {
         type: mongoose_1.Schema.Types.ObjectId,
         ref: "User",
         required: true,
+        index: true,
     },
-    code: {
+    type: {
+        type: String,
+        enum: ["credit", "debit"],
+        required: true,
+    },
+    source: {
+        type: String,
+        enum: [
+            "bank_transfer",
+            "delivery_fee",
+            "delivery_earning",
+            "withdrawal",
+        ],
+        required: true,
+    },
+    amount: {
+        type: Number,
+        required: true,
+        min: 0,
+    },
+    reference: {
+        type: String,
+        required: true,
+        unique: true,
+    },
+    status: {
+        type: String,
+        enum: ["pending", "success", "failed"],
+        default: "pending",
+    },
+    description: {
         type: String,
         required: true,
     },
-    expiresAt: {
-        type: Date,
-        required: true,
-        index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
+    metadata: {
+        type: mongoose_1.Schema.Types.Mixed,
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
-});
-exports.default = mongoose_1.default.model("Otp", OtpSchema);
+}, { timestamps: true });
+exports.default = mongoose_1.default.model("Transaction", TransactionSchema);

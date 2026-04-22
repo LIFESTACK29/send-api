@@ -34,24 +34,53 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const OtpSchema = new mongoose_1.Schema({
-    userId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: "User",
+const DeliverySchema = new mongoose_1.Schema({
+    trackingId: {
+        type: String,
         required: true,
+        unique: true,
     },
-    code: {
+    pickupLocation: {
+        address: { type: String, required: true },
+        lat: { type: Number, required: true },
+        lng: { type: Number, required: true },
+    },
+    dropoffLocation: {
+        address: { type: String, required: true },
+        lat: { type: Number, required: true },
+        lng: { type: Number, required: true },
+    },
+    packageType: {
         type: String,
         required: true,
     },
-    expiresAt: {
-        type: Date,
+    deliveryNote: {
+        type: String,
+        default: "",
+    },
+    itemImage: {
+        type: String,
+    },
+    distance: {
+        type: Number,
+    },
+    fee: {
+        type: Number,
         required: true,
-        index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
+    status: {
+        type: String,
+        enum: ["PENDING", "ONGOING", "DELIVERED", "CANCELLED"],
+        default: "PENDING",
     },
-});
-exports.default = mongoose_1.default.model("Otp", OtpSchema);
+    customerId: {
+        type: String,
+        ref: "User",
+        required: true,
+    },
+    riderId: {
+        type: String,
+        ref: "User",
+    },
+}, { timestamps: true });
+exports.default = mongoose_1.default.model("Delivery", DeliverySchema);

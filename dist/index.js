@@ -13,17 +13,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config(); // Must run before any module that reads env vars
+dotenv_1.default.config();
+const http_1 = require("http");
 const app_1 = __importDefault(require("./src/app"));
 const db_1 = __importDefault(require("./src/config/db"));
-const PORT = parseInt(process.env.PORT || "4500", 10);
+const socket_service_1 = require("./src/services/socket.service");
+const delivery_worker_1 = require("./src/workers/delivery.worker");
+const PORT = parseInt(process.env.PORT || "4250", 10);
 const startServer = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield (0, db_1.default)();
-        app_1.default.listen(PORT, "0.0.0.0", () => {
+        const server = (0, http_1.createServer)(app_1.default);
+        (0, socket_service_1.initSocket)(server);
+        // Start background workers
+        (0, delivery_worker_1.startDeliveryWorker)();
+        server.listen(PORT, "0.0.0.0", () => {
             console.log(`🚀 Server is running on port ${PORT} in ${app_1.default.get("env")} mode`);
-            // Start payout auto-sweep cron
-            // startPayoutCron();
         });
     }
     catch (error) {

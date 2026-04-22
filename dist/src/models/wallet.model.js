@@ -34,24 +34,33 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const OtpSchema = new mongoose_1.Schema({
+const WalletSchema = new mongoose_1.Schema({
     userId: {
         type: mongoose_1.Schema.Types.ObjectId,
         ref: "User",
         required: true,
+        unique: true,
     },
-    code: {
+    balance: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
+    paystackCustomerCode: {
         type: String,
         required: true,
     },
-    expiresAt: {
-        type: Date,
-        required: true,
-        index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
+    dedicatedAccountNumber: {
+        type: String,
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
+    dedicatedBankName: {
+        type: String,
     },
-});
-exports.default = mongoose_1.default.model("Otp", OtpSchema);
+    dedicatedAccountName: {
+        type: String,
+    },
+    dedicatedAccountReference: {
+        type: String,
+    },
+}, { timestamps: true });
+exports.default = mongoose_1.default.model("Wallet", WalletSchema);

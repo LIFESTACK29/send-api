@@ -34,24 +34,27 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const OtpSchema = new mongoose_1.Schema({
-    userId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
-    },
-    code: {
+const LogSchema = new mongoose_1.Schema({
+    event: {
         type: String,
         required: true,
+        index: true,
     },
-    expiresAt: {
-        type: Date,
+    payload: {
+        type: mongoose_1.Schema.Types.Mixed,
         required: true,
-        index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
+    email: {
+        type: String,
+        index: true,
     },
-});
-exports.default = mongoose_1.default.model("Otp", OtpSchema);
+    success: {
+        type: Boolean,
+        required: true,
+        default: true,
+    },
+    reason: {
+        type: String,
+    },
+}, { timestamps: true });
+exports.default = mongoose_1.default.model("Log", LogSchema);

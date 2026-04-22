@@ -34,24 +34,28 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const OtpSchema = new mongoose_1.Schema({
+const DocumentSchema = new mongoose_1.Schema({
     userId: {
-        type: mongoose_1.Schema.Types.ObjectId,
+        type: mongoose_1.default.Schema.Types.ObjectId,
         ref: "User",
         required: true,
     },
-    code: {
+    documentType: {
         type: String,
+        enum: ["DRIVING_LICENSE", "GOVERNMENT_ID", "INSURANCE", "REGISTRATION"],
         required: true,
     },
-    expiresAt: {
-        type: Date,
-        required: true,
-        index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
+    documentUrl: { type: String, required: true },
+    documentNumber: { type: String, required: true },
+    expiryDate: { type: Date },
+    verificationStatus: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "pending",
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
-});
-exports.default = mongoose_1.default.model("Otp", OtpSchema);
+    rejectionReason: { type: String },
+    uploadedAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+// Index for quick lookup by userId
+DocumentSchema.index({ userId: 1, documentType: 1 });
+exports.default = mongoose_1.default.model("Document", DocumentSchema);

@@ -34,24 +34,31 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const OtpSchema = new mongoose_1.Schema({
+const VehicleSchema = new mongoose_1.Schema({
     userId: {
-        type: mongoose_1.Schema.Types.ObjectId,
+        type: mongoose_1.default.Schema.Types.ObjectId,
         ref: "User",
         required: true,
     },
-    code: {
+    vehicleType: {
         type: String,
+        enum: ["BICYCLE", "MOTORCYCLE", "TRICYCLE", "CAR"],
         required: true,
     },
-    expiresAt: {
-        type: Date,
-        required: true,
-        index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
+    brand: { type: String, required: true },
+    model: { type: String, required: true },
+    year: { type: Number, required: true },
+    color: { type: String, required: true },
+    licensePlate: { type: String, required: true },
+    registrationNumber: { type: String },
+    imageUrl: { type: String },
+    additionalDetails: { type: mongoose_1.Schema.Types.Mixed, default: {} },
+    verificationStatus: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "pending",
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
-});
-exports.default = mongoose_1.default.model("Otp", OtpSchema);
+}, { timestamps: true });
+// Index for quick lookup by userId
+VehicleSchema.index({ userId: 1 });
+exports.default = mongoose_1.default.model("Vehicle", VehicleSchema);
