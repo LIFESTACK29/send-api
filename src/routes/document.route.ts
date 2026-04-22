@@ -17,7 +17,12 @@ const router = Router();
 router.get("/required", authenticate, getRequiredDocuments);
 
 // Rider routes - Document management
-router.post("/:userId/documents", authenticate, upload.single("documentFile"), uploadDocument);
+router.post(
+    "/:userId/documents",
+    authenticate,
+    upload.single("documentFile"),
+    uploadDocument,
+);
 router.get("/:userId/documents", authenticate, getUserDocuments);
 router.get("/:userId/documents/:documentId", authenticate, getDocument);
 router.delete("/:userId/documents/:documentId", authenticate, deleteDocument);

@@ -4,12 +4,21 @@ export interface ILocation {
     address: string;
     lat: number;
     lng: number;
+    shortName?: string;
+}
+
+export interface IContactDetails {
+    fullName: string;
+    email: string;
+    phoneNumber: string;
 }
 
 export interface IDelivery extends Document {
     trackingId: string;
     pickupLocation: ILocation;
     dropoffLocation: ILocation;
+    customer: IContactDetails;
+    receiver: IContactDetails;
     packageType: string;
     deliveryNote?: string;
     itemImage?: string;
@@ -33,11 +42,23 @@ const DeliverySchema: Schema = new Schema(
             address: { type: String, required: true },
             lat: { type: Number, required: true },
             lng: { type: Number, required: true },
+            shortName: { type: String },
         },
         dropoffLocation: {
             address: { type: String, required: true },
             lat: { type: Number, required: true },
             lng: { type: Number, required: true },
+            shortName: { type: String },
+        },
+        customer: {
+            fullName: { type: String, required: true },
+            email: { type: String, required: true },
+            phoneNumber: { type: String, required: true },
+        },
+        receiver: {
+            fullName: { type: String, required: true },
+            email: { type: String, required: true },
+            phoneNumber: { type: String, required: true },
         },
         packageType: {
             type: String,

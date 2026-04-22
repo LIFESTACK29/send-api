@@ -42,7 +42,12 @@ const DocumentSchema = new mongoose_1.Schema({
     },
     documentType: {
         type: String,
-        enum: ["DRIVING_LICENSE", "GOVERNMENT_ID", "INSURANCE", "REGISTRATION"],
+        enum: [
+            "DRIVING_LICENSE",
+            "GOVERNMENT_ID",
+            "INSURANCE",
+            "REGISTRATION",
+        ],
         required: true,
     },
     documentUrl: { type: String, required: true },

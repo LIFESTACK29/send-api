@@ -265,7 +265,8 @@ export const verifyDocument: RequestHandler = CatchAsync(
             documentId,
             {
                 verificationStatus: status,
-                rejectionReason: status === "rejected" ? rejectionReason : undefined,
+                rejectionReason:
+                    status === "rejected" ? rejectionReason : undefined,
             },
             { new: true },
         );

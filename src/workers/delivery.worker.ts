@@ -27,7 +27,23 @@ export const startDeliveryWorker = () => {
             if (type === "TIMEOUT_CHECK") {
                 // Inform the specific customer that no rider was found in the initial search
                 const { emitToRoom } = require("../services/socket.service");
-                emitToRoom(`customer-${delivery.customerId}`, "no_rider_found", { deliveryId });
+                emitToRoom(`customer-${delivery.customerId}`, "no_rider_found", {
+                    deliveryId,
+                    status: "no_rider_found",
+                    message:
+                        "No rider accepted your delivery yet. You can continue waiting or create it yourself.",
+                    actions: [
+                        {
+                            type: "wait_more",
+                            label: "Keep Waiting",
+                        },
+                        {
+                            type: "create_it_yourself",
+                            label: "Create It Yourself",
+                            style: "primary",
+                        },
+                    ],
+                });
                 console.log(`[Worker] No rider found for ${deliveryId}. Notified customer.`);
                 return;
             }

@@ -31,6 +31,10 @@ router.get("/:userId/vehicles/:vehicleId", authenticate, getVehicle);
 
 // Onboarding status
 router.get("/:userId/onboarding-status", authenticate, getOnboardingStatus);
-router.post("/:userId/submit-verification", authenticate, submitForVerification);
+router.post(
+    "/:userId/submit-verification",
+    authenticate,
+    submitForVerification,
+);
 
 export default router;

@@ -2,7 +2,11 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IDocument extends Document {
     userId: mongoose.Schema.Types.ObjectId;
-    documentType: "DRIVING_LICENSE" | "GOVERNMENT_ID" | "INSURANCE" | "REGISTRATION";
+    documentType:
+        | "DRIVING_LICENSE"
+        | "GOVERNMENT_ID"
+        | "INSURANCE"
+        | "REGISTRATION";
     documentUrl: string;
     documentNumber: string;
     expiryDate?: Date;
@@ -21,7 +25,12 @@ const DocumentSchema: Schema = new Schema(
         },
         documentType: {
             type: String,
-            enum: ["DRIVING_LICENSE", "GOVERNMENT_ID", "INSURANCE", "REGISTRATION"],
+            enum: [
+                "DRIVING_LICENSE",
+                "GOVERNMENT_ID",
+                "INSURANCE",
+                "REGISTRATION",
+            ],
             required: true,
         },
         documentUrl: { type: String, required: true },

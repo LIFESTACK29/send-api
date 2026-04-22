@@ -115,7 +115,7 @@ exports.createVehicle = (0, catchasync_util_1.CatchAsync)((req, res) => __awaite
  */
 exports.updateVehicleDetails = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { userId, vehicleId } = req.params;
-    const { brand, model, year, color, licensePlate, registrationNumber, additionalDetails } = req.body;
+    const { brand, model, year, color, licensePlate, registrationNumber, additionalDetails, } = req.body;
     // Validate required fields
     if (!brand || !model || !year || !color || !licensePlate) {
         res.status(400).json({

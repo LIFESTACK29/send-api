@@ -118,8 +118,15 @@ export const createVehicle: RequestHandler = CatchAsync(
 export const updateVehicleDetails: RequestHandler = CatchAsync(
     async (req: AuthRequest, res: Response) => {
         const { userId, vehicleId } = req.params;
-        const { brand, model, year, color, licensePlate, registrationNumber, additionalDetails } =
-            req.body;
+        const {
+            brand,
+            model,
+            year,
+            color,
+            licensePlate,
+            registrationNumber,
+            additionalDetails,
+        } = req.body;
 
         // Validate required fields
         if (!brand || !model || !year || !color || !licensePlate) {
@@ -287,15 +294,14 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
         const vehicles = await Vehicle.find({ userId });
         const vehicleComplete =
             vehicles.length > 0 &&
-            vehicles.every(
-                (v) =>
-                    Boolean(
-                        v.brand &&
-                            v.get("model") &&
-                            v.year &&
-                            v.color &&
-                            v.imageUrl,
-                    ),
+            vehicles.every((v) =>
+                Boolean(
+                    v.brand &&
+                    v.get("model") &&
+                    v.year &&
+                    v.color &&
+                    v.imageUrl,
+                ),
             );
 
         // Check documents
@@ -321,9 +327,8 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
                 user.riderStatus === "active",
         };
 
-        const completionPercentage = Object.values(progress).filter(
-            Boolean,
-        ).length;
+        const completionPercentage =
+            Object.values(progress).filter(Boolean).length;
 
         res.status(200).json({
             success: true,
@@ -385,11 +390,10 @@ export const submitForVerification: RequestHandler = CatchAsync(
             return;
         }
 
-        const vehicleComplete = vehicles.every(
-            (v) =>
-                Boolean(
-                    v.brand && v.get("model") && v.year && v.color && v.imageUrl,
-                ),
+        const vehicleComplete = vehicles.every((v) =>
+            Boolean(
+                v.brand && v.get("model") && v.year && v.color && v.imageUrl,
+            ),
         );
 
         if (!vehicleComplete) {
@@ -418,7 +422,8 @@ export const submitForVerification: RequestHandler = CatchAsync(
             data: {
                 userId,
                 riderStatus: user.riderStatus,
-                message: "Your application is under review. You'll be notified once verified.",
+                message:
+                    "Your application is under review. You'll be notified once verified.",
             },
         });
     },

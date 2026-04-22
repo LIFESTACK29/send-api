@@ -101,10 +101,16 @@ export const initSocket = (server: HttpServer) => {
                     console.log(`🔍 Customer ${userId} joined rider-discovery`);
 
                     // Immediately send current online riders to the new joiner
-                    User.find({ role: "rider", isOnline: true }).then(riders => {
+                    User.find({
+                        role: "rider",
+                        isOnline: true,
+                        riderStatus: "active",
+                    }).then(riders => {
                         socket.emit("initial_riders", riders.map(r => ({
                             riderId: r._id,
                             name: `${r.firstName} ${r.lastName}`,
+                            profileImageUrl: r.profileImageUrl || null,
+                            riderStatus: r.riderStatus || "incomplete",
                             coords: {
                                 lat: r.currentLocation?.coordinates[1],
                                 lng: r.currentLocation?.coordinates[0]

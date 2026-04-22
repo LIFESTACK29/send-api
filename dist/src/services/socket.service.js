@@ -101,12 +101,18 @@ const initSocket = (server) => {
                     socket.join("rider-discovery");
                     console.log(`🔍 Customer ${userId} joined rider-discovery`);
                     // Immediately send current online riders to the new joiner
-                    user_model_1.default.find({ role: "rider", isOnline: true }).then(riders => {
+                    user_model_1.default.find({
+                        role: "rider",
+                        isOnline: true,
+                        riderStatus: "active",
+                    }).then(riders => {
                         socket.emit("initial_riders", riders.map(r => {
                             var _a, _b;
                             return ({
                                 riderId: r._id,
                                 name: `${r.firstName} ${r.lastName}`,
+                                profileImageUrl: r.profileImageUrl || null,
+                                riderStatus: r.riderStatus || "incomplete",
                                 coords: {
                                     lat: (_a = r.currentLocation) === null || _a === void 0 ? void 0 : _a.coordinates[1],
                                     lng: (_b = r.currentLocation) === null || _b === void 0 ? void 0 : _b.coordinates[0]
