@@ -1,27 +1,38 @@
 import * as admin from "firebase-admin";
-import * as path from "path";
 import User from "../models/user.model";
 
-// Initialize Firebase Admin
-const serviceAccountPath = path.resolve(
-    process.cwd(),
-    "src/config/firebase-service-account.json"
-);
+const getFirebaseCredential = (): admin.ServiceAccount | null => {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+    if (!projectId || !clientEmail || !privateKey) {
+        return null;
+    }
+
+    return {
+        projectId,
+        clientEmail,
+        privateKey,
+    };
+};
 
 try {
     if (!admin.apps.length) {
-        const fs = require("fs");
-        const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+        const serviceAccount = getFirebaseCredential();
 
-        if (serviceAccount.private_key) {
-            // Replace escaped newlines with actual newlines
-            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+        if (!serviceAccount) {
+            console.warn(
+                "Firebase Admin not initialized: missing FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, or FIREBASE_PRIVATE_KEY in environment.",
+            );
+        } else {
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount),
+            });
+            console.log(
+                `✅ Firebase Admin initialized for: ${serviceAccount.projectId}`,
+            );
         }
-
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount),
-        });
-        console.log(`✅ Firebase Admin initialized for: ${serviceAccount.project_id}`);
     }
 } catch (error) {
     console.error("❌ Error initializing Firebase Admin:", error);
@@ -35,6 +46,13 @@ export const sendPushNotification = async (
     payload: { title: string; body: string; data?: any }
 ) => {
     try {
+        if (!admin.apps.length) {
+            console.warn(
+                `[Notification] Skip: Firebase Admin not initialized for user ${userId}`,
+            );
+            return;
+        }
+
         const user = await User.findById(userId);
         if (!user || !user.pushToken) {
             console.log(`[Notification] Skip: No push token for user ${userId}`);

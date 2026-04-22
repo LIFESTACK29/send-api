@@ -1,7 +1,7 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
-export interface IVehicle extends Document {
-    userId: mongoose.Schema.Types.ObjectId;
+export interface IVehicle {
+    userId: mongoose.Types.ObjectId;
     vehicleType: "BICYCLE" | "MOTORCYCLE" | "TRICYCLE" | "CAR";
     brand: string;
     model: string;

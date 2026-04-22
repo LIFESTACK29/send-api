@@ -443,7 +443,7 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
     });
 
     // 4. Send Push Notification
-    await sendPushNotification(wallet.userId as string, {
+    await sendPushNotification(wallet.userId.toString(), {
         title: "Wallet Created! 🎉",
         body: `Your RahaSend wallet is ready. Account: ${wallet.dedicatedAccountNumber} (${wallet.dedicatedBankName})`,
         data: {
