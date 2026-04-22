@@ -12,9 +12,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getDeliveryById = exports.getMyDeliveries = exports.cancelDelivery = exports.acceptDelivery = exports.getNearbyRiders = exports.requestDelivery = exports.calculateDeliveryFee = void 0;
+exports.getDeliveryById = exports.getMyDeliveries = exports.cancelDelivery = exports.assignRiderToDeliveryByAdmin = exports.acceptDelivery = exports.getNearbyRiders = exports.createDeliveryManually = exports.waitMoreForRider = exports.requestDelivery = exports.calculateDeliveryFee = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const delivery_model_1 = __importDefault(require("../models/delivery.model"));
+const delivery_match_request_model_1 = __importDefault(require("../models/delivery-match-request.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
 const socket_service_1 = require("../services/socket.service");
@@ -25,11 +26,8 @@ const BASE_FEE_NAIRA = 1000;
 const PER_KM_FEE_NAIRA = 200;
 const MATCH_RADIUS_METERS = 5000;
 const MATCH_TIMEOUT_SECONDS = 60;
-/**
- * Calculate distance between two points in km using Haversine formula
- */
 const getDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -132,6 +130,35 @@ const createMobileDeliveryResponse = (delivery, nearbyRidersCount) => ({
     },
     createdAt: delivery.createdAt,
 });
+const createMatchRequestResponse = (matchRequest, nearbyRidersCount) => ({
+    id: matchRequest._id,
+    status: matchRequest.status,
+    pricing: {
+        fee: matchRequest.fee,
+        currency: "NGN",
+    },
+    route: {
+        distanceKm: Number((matchRequest.distance || 0).toFixed(2)),
+        pickup: matchRequest.pickupLocation,
+        dropoff: matchRequest.dropoffLocation,
+    },
+    contact: {
+        customer: matchRequest.customer,
+        receiver: matchRequest.receiver,
+    },
+    package: {
+        type: matchRequest.packageType,
+        note: matchRequest.deliveryNote || "",
+        imageUrl: matchRequest.itemImage || null,
+    },
+    matching: {
+        strategy: nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
+        nearbyRidersCount,
+        radiusMeters: matchRequest.searchRadiusMeters || MATCH_RADIUS_METERS,
+        timeoutSeconds: matchRequest.timeoutSeconds || MATCH_TIMEOUT_SECONDS,
+    },
+    createdAt: matchRequest.createdAt,
+});
 const buildRiderPreview = (riderId) => __awaiter(void 0, void 0, void 0, function* () {
     const riderUser = yield user_model_1.default.findById(riderId).select("firstName lastName profileImageUrl riderStatus phoneNumber");
     if (!riderUser)
@@ -158,11 +185,23 @@ const buildRiderPreview = (riderId) => __awaiter(void 0, void 0, void 0, functio
             : null,
     };
 });
-/**
- * @desc    Calculate delivery fee based on coordinates
- * @route   POST /api/v1/deliveries/calculate-fee
- * @access  Private (Customer)
- */
+const findNearbyActiveRiders = (lat_1, lng_1, ...args_1) => __awaiter(void 0, [lat_1, lng_1, ...args_1], void 0, function* (lat, lng, radius = MATCH_RADIUS_METERS) {
+    return user_model_1.default.find({
+        role: "rider",
+        isOnline: true,
+        riderStatus: "active",
+        currentLocation: {
+            $nearSphere: {
+                $geometry: {
+                    type: "Point",
+                    coordinates: [lng, lat],
+                },
+                $maxDistance: radius,
+            },
+        },
+    }).select("_id");
+});
+const generateTrackingId = () => `RS-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
 const calculateDeliveryFee = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const pickupParsed = parseLocation(req.body.pickupLocation);
@@ -170,9 +209,7 @@ const calculateDeliveryFee = (req, res, next) => __awaiter(void 0, void 0, void 
         if ("error" in pickupParsed || "error" in dropoffParsed) {
             res.status(400).json({
                 success: false,
-                message: "error" in pickupParsed
-                    ? pickupParsed.error
-                    : dropoffParsed.error,
+                message: "error" in pickupParsed ? pickupParsed.error : dropoffParsed.error,
             });
             return;
         }
@@ -196,7 +233,6 @@ const calculateDeliveryFee = (req, res, next) => __awaiter(void 0, void 0, void 
                     dropoffLocation,
                 },
             },
-            // Backward-compatible fields
             distance,
             fee,
         });
@@ -207,9 +243,7 @@ const calculateDeliveryFee = (req, res, next) => __awaiter(void 0, void 0, void 
 });
 exports.calculateDeliveryFee = calculateDeliveryFee;
 /**
- * @desc    Customer requests a new delivery
- * @route   POST /api/v1/deliveries/request
- * @access  Private (Customer)
+ * Search riders first. Delivery is created only on rider accept or manual fallback.
  */
 const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -224,19 +258,14 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         if ("error" in pickupParsed || "error" in dropoffParsed) {
             res.status(400).json({
                 success: false,
-                message: "error" in pickupParsed
-                    ? pickupParsed.error
-                    : dropoffParsed.error,
+                message: "error" in pickupParsed ? pickupParsed.error : dropoffParsed.error,
             });
             return;
         }
         pickupLocation = pickupParsed.value;
         dropoffLocation = dropoffParsed.value;
         if (!packageType) {
-            res.status(400).json({
-                success: false,
-                message: "Package type is required",
-            });
+            res.status(400).json({ success: false, message: "Package type is required" });
             return;
         }
         const customerParsed = parseContactDetails(customer !== null && customer !== void 0 ? customer : {
@@ -245,10 +274,7 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             phoneNumber: req.body.customerPhoneNumber,
         }, "Customer");
         if ("error" in customerParsed) {
-            res.status(400).json({
-                success: false,
-                message: customerParsed.error,
-            });
+            res.status(400).json({ success: false, message: customerParsed.error });
             return;
         }
         const receiverParsed = parseContactDetails(receiver !== null && receiver !== void 0 ? receiver : {
@@ -257,10 +283,7 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             phoneNumber: req.body.receiverPhoneNumber,
         }, "Receiver");
         if ("error" in receiverParsed) {
-            res.status(400).json({
-                success: false,
-                message: receiverParsed.error,
-            });
+            res.status(400).json({ success: false, message: receiverParsed.error });
             return;
         }
         if (!req.file) {
@@ -271,18 +294,11 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             });
             return;
         }
-        // Calculate distance and fee
         const distance = getDistance(pickupLocation.lat, pickupLocation.lng, dropoffLocation.lat, dropoffLocation.lng);
         const calculatedFee = Math.ceil(BASE_FEE_NAIRA + distance * PER_KM_FEE_NAIRA);
-        // Package image is mandatory
         const itemImage = yield (0, upload_middleware_1.uploadToStorage)(req.file, "deliveries");
-        // Generate a simple tracking ID
-        const trackingId = `RS-${new Date()
-            .toISOString()
-            .split("T")[0]
-            .replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const newDelivery = yield delivery_model_1.default.create({
-            trackingId,
+        const matchRequest = yield delivery_match_request_model_1.default.create({
+            customerId,
             pickupLocation,
             dropoffLocation,
             customer: customerParsed.value,
@@ -292,43 +308,26 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             itemImage,
             distance,
             fee: calculatedFee,
-            status: "PENDING",
-            customerId,
+            status: "SEARCHING",
+            searchRadiusMeters: MATCH_RADIUS_METERS,
+            timeoutSeconds: MATCH_TIMEOUT_SECONDS,
         });
-        // 1. Find online riders within 5km radius
-        const nearbyRiders = yield user_model_1.default.find({
-            role: "rider",
-            isOnline: true,
-            riderStatus: "active",
-            currentLocation: {
-                $nearSphere: {
-                    $geometry: {
-                        type: "Point",
-                        coordinates: [pickupLocation.lng, pickupLocation.lat], // [lng, lat]
-                    },
-                    $maxDistance: MATCH_RADIUS_METERS,
-                },
-            },
-        });
+        const nearbyRiders = yield findNearbyActiveRiders(pickupLocation.lat, pickupLocation.lng, MATCH_RADIUS_METERS);
+        const riderPayload = createMatchRequestResponse(matchRequest, nearbyRiders.length);
         if (nearbyRiders.length > 0) {
-            console.log(`[Matching] Found ${nearbyRiders.length} nearby riders for ${newDelivery._id}`);
-            // Notify each nearby rider specifically
             nearbyRiders.forEach((rider) => {
-                (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_delivery", newDelivery);
+                (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_match_request", riderPayload);
             });
         }
         else {
-            console.log(`[Matching] No nearby riders found for ${newDelivery._id}. Broadcasting to all.`);
-            // Fallback: Notify all online riders if no one is nearby
-            (0, socket_service_1.emitToRiders)("incoming_delivery", newDelivery);
+            (0, socket_service_1.emitToRiders)("incoming_match_request", riderPayload);
         }
-        // Add to matching queue and timeout job
-        yield (0, delivery_queue_1.addDeliveryJob)(newDelivery);
-        yield (0, delivery_queue_1.addTimeoutJob)(newDelivery);
+        yield (0, delivery_queue_1.addMatchRequestBroadcastJob)(matchRequest);
+        yield (0, delivery_queue_1.addMatchRequestTimeoutJob)(matchRequest);
         res.status(201).json({
             success: true,
-            message: "Delivery request created and rider matching started",
-            delivery: createMobileDeliveryResponse(newDelivery, nearbyRiders.length),
+            message: "Rider search started. Delivery will be created after rider acceptance or manual fallback.",
+            matchRequest: riderPayload,
             nextAction: {
                 state: "searching_for_rider",
                 socketEvents: {
@@ -338,7 +337,8 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 fallback: {
                     type: "create_it_yourself",
                     label: "Create It Yourself",
-                    description: "If no rider accepts within 60 seconds, you can choose to create the delivery yourself.",
+                    description: "If no rider accepts within 60 seconds, create delivery manually for admin/worker assignment.",
+                    endpoint: `/api/v1/deliveries/match-requests/${matchRequest._id}/create-manual`,
                 },
             },
         });
@@ -348,11 +348,129 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.requestDelivery = requestDelivery;
-/**
- * @desc    Get nearby available riders (for Customer app visibility)
- * @route   GET /api/v1/deliveries/nearby-riders
- * @access  Private (Customer)
- */
+const waitMoreForRider = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const customerId = (0, auth_middleware_1.getUserId)(req);
+        if (!customerId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+        const { id } = req.params;
+        const matchRequest = yield delivery_match_request_model_1.default.findOne({
+            _id: id,
+            customerId,
+        });
+        if (!matchRequest) {
+            res.status(404).json({ success: false, message: "Match request not found" });
+            return;
+        }
+        if (!["NO_RIDER_FOUND", "SEARCHING"].includes(matchRequest.status)) {
+            res.status(400).json({
+                success: false,
+                message: "Match request is no longer in a searchable state",
+            });
+            return;
+        }
+        matchRequest.status = "SEARCHING";
+        yield matchRequest.save();
+        const nearbyRiders = yield findNearbyActiveRiders(matchRequest.pickupLocation.lat, matchRequest.pickupLocation.lng, matchRequest.searchRadiusMeters || MATCH_RADIUS_METERS);
+        const riderPayload = createMatchRequestResponse(matchRequest, nearbyRiders.length);
+        if (nearbyRiders.length > 0) {
+            nearbyRiders.forEach((rider) => {
+                (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_match_request", riderPayload);
+            });
+        }
+        else {
+            (0, socket_service_1.emitToRiders)("incoming_match_request", riderPayload);
+        }
+        yield (0, delivery_queue_1.addMatchRequestBroadcastJob)(matchRequest);
+        yield (0, delivery_queue_1.addMatchRequestTimeoutJob)(matchRequest);
+        res.status(200).json({
+            success: true,
+            message: "Rider search resumed",
+            matchRequest: riderPayload,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.waitMoreForRider = waitMoreForRider;
+const createDeliveryManually = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const customerId = (0, auth_middleware_1.getUserId)(req);
+        if (!customerId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+        const { id } = req.params;
+        const matchRequest = yield delivery_match_request_model_1.default.findOne({ _id: id, customerId });
+        if (!matchRequest) {
+            res.status(404).json({ success: false, message: "Match request not found" });
+            return;
+        }
+        if (matchRequest.createdDeliveryId) {
+            const existingDelivery = yield delivery_model_1.default.findById(matchRequest.createdDeliveryId);
+            if (existingDelivery) {
+                res.status(200).json({
+                    success: true,
+                    message: "Manual delivery already created",
+                    delivery: createMobileDeliveryResponse(existingDelivery, 0),
+                });
+                return;
+            }
+        }
+        if (["RIDER_ASSIGNED", "CANCELLED"].includes(matchRequest.status)) {
+            res.status(400).json({
+                success: false,
+                message: "This match request cannot be converted to manual delivery",
+            });
+            return;
+        }
+        const delivery = yield delivery_model_1.default.create({
+            trackingId: generateTrackingId(),
+            pickupLocation: matchRequest.pickupLocation,
+            dropoffLocation: matchRequest.dropoffLocation,
+            customer: matchRequest.customer,
+            receiver: matchRequest.receiver,
+            packageType: matchRequest.packageType,
+            deliveryNote: matchRequest.deliveryNote,
+            itemImage: matchRequest.itemImage,
+            distance: matchRequest.distance,
+            fee: matchRequest.fee,
+            status: "PENDING",
+            customerId: matchRequest.customerId,
+        });
+        matchRequest.status = "MANUAL_CREATED";
+        matchRequest.createdDeliveryId = String(delivery._id);
+        yield matchRequest.save();
+        const nearbyRiders = yield findNearbyActiveRiders(delivery.pickupLocation.lat, delivery.pickupLocation.lng, MATCH_RADIUS_METERS);
+        if (nearbyRiders.length > 0) {
+            nearbyRiders.forEach((rider) => {
+                (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_delivery", delivery);
+            });
+        }
+        yield (0, delivery_queue_1.addManualAssignmentCheckJob)(delivery, 0, 30000);
+        res.status(201).json({
+            success: true,
+            message: "Manual delivery created and queued for assignment checks",
+            delivery: createMobileDeliveryResponse(delivery, nearbyRiders.length),
+            assignment: {
+                mode: "worker_or_admin",
+                state: "pending_assignment",
+                socketEvents: {
+                    onRiderAssigned: "delivery_accepted",
+                    onRidersNearby: "manual_delivery_riders_available",
+                    onAdminOfferSent: "rider_assignment_offer_sent",
+                },
+            },
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.createDeliveryManually = createDeliveryManually;
 const getNearbyRiders = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { lat, lng, radius = 5000 } = req.query;
@@ -403,9 +521,7 @@ const getNearbyRiders = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
 });
 exports.getNearbyRiders = getNearbyRiders;
 /**
- * @desc    Rider accepts a delivery
- * @route   POST /api/v1/deliveries/:id/accept
- * @access  Private (Rider)
+ * Accepts either a match request id (new flow) or a pending delivery id (manual/admin flow).
  */
 const acceptDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -415,26 +531,75 @@ const acceptDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
             return;
         }
         const { id } = req.params;
+        const matchRequest = yield delivery_match_request_model_1.default.findById(id);
+        if (matchRequest) {
+            if (!["SEARCHING", "NO_RIDER_FOUND"].includes(matchRequest.status)) {
+                res.status(400).json({ message: "Match request is no longer available" });
+                return;
+            }
+            if (matchRequest.matchedRiderId && String(matchRequest.matchedRiderId) !== String(riderId)) {
+                res.status(409).json({ message: "Another rider already accepted this request" });
+                return;
+            }
+            if (matchRequest.createdDeliveryId) {
+                const existingDelivery = yield delivery_model_1.default.findById(matchRequest.createdDeliveryId);
+                if (existingDelivery) {
+                    res.status(200).json({
+                        success: true,
+                        message: "Delivery already created for this match request",
+                        delivery: existingDelivery,
+                    });
+                    return;
+                }
+            }
+            const delivery = yield delivery_model_1.default.create({
+                trackingId: generateTrackingId(),
+                pickupLocation: matchRequest.pickupLocation,
+                dropoffLocation: matchRequest.dropoffLocation,
+                customer: matchRequest.customer,
+                receiver: matchRequest.receiver,
+                packageType: matchRequest.packageType,
+                deliveryNote: matchRequest.deliveryNote,
+                itemImage: matchRequest.itemImage,
+                distance: matchRequest.distance,
+                fee: matchRequest.fee,
+                status: "ONGOING",
+                customerId: matchRequest.customerId,
+                riderId,
+            });
+            matchRequest.status = "RIDER_ASSIGNED";
+            matchRequest.matchedRiderId = riderId;
+            matchRequest.createdDeliveryId = String(delivery._id);
+            yield matchRequest.save();
+            const riderDetails = yield buildRiderPreview(riderId);
+            const payload = {
+                delivery,
+                rider: riderDetails,
+                matchRequestId: matchRequest._id,
+            };
+            (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_accepted", payload);
+            res.status(200).json({
+                success: true,
+                message: "Match request accepted and delivery created",
+                delivery,
+                rider: riderDetails,
+            });
+            return;
+        }
         const delivery = yield delivery_model_1.default.findById(id);
         if (!delivery) {
-            res.status(404).json({ message: "Delivery not found" });
+            res.status(404).json({ message: "Delivery or match request not found" });
             return;
         }
         if (delivery.status !== "PENDING") {
-            res.status(400).json({
-                message: "Delivery is no longer available/pending",
-            });
+            res.status(400).json({ message: "Delivery is no longer available/pending" });
             return;
         }
         delivery.status = "ONGOING";
         delivery.riderId = riderId;
         yield delivery.save();
         const riderDetails = yield buildRiderPreview(riderId);
-        const payload = {
-            delivery,
-            rider: riderDetails,
-        };
-        // Inform the specific customer that their delivery was accepted
+        const payload = { delivery, rider: riderDetails };
         (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_accepted", payload);
         res.status(200).json({
             success: true,
@@ -448,11 +613,67 @@ const acceptDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
     }
 });
 exports.acceptDelivery = acceptDelivery;
-/**
- * @desc    Customer cancels a delivery
- * @route   POST /api/v1/deliveries/:id/cancel
- * @access  Private (Customer)
- */
+const assignRiderToDeliveryByAdmin = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        if (((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) !== "admin") {
+            res.status(403).json({ success: false, message: "Forbidden - admin only" });
+            return;
+        }
+        const { id } = req.params;
+        const { riderId } = req.body;
+        if (!riderId) {
+            res.status(400).json({ success: false, message: "riderId is required" });
+            return;
+        }
+        const rider = yield user_model_1.default.findById(riderId).select("role riderStatus");
+        if (!rider || rider.role !== "rider") {
+            res.status(404).json({ success: false, message: "Rider not found" });
+            return;
+        }
+        const delivery = yield delivery_model_1.default.findById(id);
+        if (!delivery) {
+            res.status(404).json({ success: false, message: "Delivery not found" });
+            return;
+        }
+        if (delivery.status !== "PENDING") {
+            res.status(400).json({
+                success: false,
+                message: "Only pending deliveries can receive rider offers",
+            });
+            return;
+        }
+        const riderDetails = yield buildRiderPreview(riderId);
+        const payload = {
+            delivery,
+            rider: riderDetails,
+            assignedBy: "admin",
+            requiresAcceptance: true,
+            nextAction: {
+                action: "accept_delivery",
+                endpoint: `/api/v1/deliveries/${delivery._id}/accept`,
+            },
+        };
+        (0, socket_service_1.emitToRoom)(`user-${riderId}`, "assigned_delivery_offer", payload);
+        (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "rider_assignment_offer_sent", {
+            deliveryId: delivery._id,
+            riderId,
+            rider: riderDetails,
+            message: "A rider has been notified for your delivery. Assignment happens only after rider acceptance.",
+        });
+        res.status(200).json({
+            success: true,
+            message: "Rider notified successfully. Delivery remains pending until rider accepts.",
+            delivery,
+            rider: riderDetails,
+            state: "awaiting_rider_acceptance",
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.assignRiderToDeliveryByAdmin = assignRiderToDeliveryByAdmin;
 const cancelDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const customerId = (0, auth_middleware_1.getUserId)(req);
@@ -478,21 +699,13 @@ const cancelDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         }
         delivery.status = "CANCELLED";
         yield delivery.save();
-        res.status(200).json({
-            message: "Delivery cancelled successfully",
-            delivery,
-        });
+        res.status(200).json({ message: "Delivery cancelled successfully", delivery });
     }
     catch (error) {
         next(error);
     }
 });
 exports.cancelDelivery = cancelDelivery;
-/**
- * @desc    Get current user's (customer) deliveries
- * @route   GET /api/v1/deliveries/my-deliveries
- * @access  Private (Customer)
- */
 const getMyDeliveries = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const customerId = (0, auth_middleware_1.getUserId)(req);
@@ -500,14 +713,9 @@ const getMyDeliveries = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        // Use a more robust query to handle potential type inconsistencies (String vs ObjectId)
         const query = {
-            $or: [
-                { customerId: customerId },
-                { riderId: customerId },
-            ]
+            $or: [{ customerId: customerId }, { riderId: customerId }],
         };
-        // If it's a valid ObjectId hex string, also look for it as an actual ObjectId
         if (mongoose_1.default.Types.ObjectId.isValid(customerId)) {
             const objectId = new mongoose_1.default.Types.ObjectId(customerId);
             query.$or.push({ customerId: objectId });
@@ -550,25 +758,16 @@ const getMyDeliveries = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             createdAt: delivery.createdAt,
             updatedAt: delivery.updatedAt,
         }));
-        res.status(200).json({
-            success: true,
-            deliveries: mobileDeliveries,
-        });
+        res.status(200).json({ success: true, deliveries: mobileDeliveries });
     }
     catch (error) {
         next(error);
     }
 });
 exports.getMyDeliveries = getMyDeliveries;
-/**
- * @desc    Get a single delivery detail
- * @route   GET /api/v1/deliveries/:id
- * @access  Private (Customer/Rider)
- */
 const getDeliveryById = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        // Find by ID, supporting both String and ObjectId types
         const query = { _id: id };
         if (mongoose_1.default.Types.ObjectId.isValid(id)) {
             query._id = { $in: [id, new mongoose_1.default.Types.ObjectId(id)] };

@@ -6,46 +6,81 @@ export const deliveryQueue = new Queue("delivery-matching", {
 });
 
 /**
- * Add a delivery matching job to the queue
+ * Re-broadcast a match request to riders.
  */
-export const addDeliveryJob = async (delivery: any) => {
+export const addMatchRequestBroadcastJob = async (matchRequest: any) => {
     try {
         await deliveryQueue.add(
-            `match-${delivery._id}`,
-            { deliveryId: delivery._id, customerId: delivery.customerId },
+            `match-request-broadcast-${matchRequest._id}-${Date.now()}`,
             {
-                attempts: 1, // We'll handle retries manually in the worker for now
+                type: "MATCH_REQUEST_BROADCAST",
+                matchRequestId: matchRequest._id,
+                customerId: matchRequest.customerId,
+            },
+            {
+                attempts: 1,
                 removeOnComplete: true,
                 removeOnFail: true,
-                delay: 2000, // Small delay for demo
-            }
+                delay: 2000,
+            },
         );
-        console.log(`[Queue] Added delivery job for ${delivery._id}`);
+        console.log(`[Queue] Added match request broadcast job for ${matchRequest._id}`);
     } catch (error) {
-        console.error(`[Queue] Error adding delivery job to queue:`, error);
+        console.error(`[Queue] Error adding match request broadcast job:`, error);
     }
 };
 
 /**
- * Add a timeout job that will notify the customer if no rider is found after 60s
+ * Add timeout check for a match request search window.
  */
-export const addTimeoutJob = async (delivery: any) => {
+export const addMatchRequestTimeoutJob = async (matchRequest: any) => {
     try {
         await deliveryQueue.add(
-            `timeout-${delivery._id}`,
-            { 
-                deliveryId: delivery._id, 
-                customerId: delivery.customerId,
-                type: "TIMEOUT_CHECK" 
+            `match-request-timeout-${matchRequest._id}-${Date.now()}`,
+            {
+                type: "MATCH_REQUEST_TIMEOUT_CHECK",
+                matchRequestId: matchRequest._id,
+                customerId: matchRequest.customerId,
             },
             {
-                delay: 60000, // 60 seconds
+                delay: (matchRequest.timeoutSeconds || 60) * 1000,
                 removeOnComplete: true,
                 removeOnFail: true,
-            }
+            },
         );
-        console.log(`[Queue] Added timeout notification job for ${delivery._id}`);
+        console.log(`[Queue] Added match request timeout job for ${matchRequest._id}`);
     } catch (error) {
-        console.error(`[Queue] Error adding timeout job:`, error);
+        console.error(`[Queue] Error adding match request timeout job:`, error);
+    }
+};
+
+/**
+ * For manual deliveries without assigned rider, periodically check nearby riders.
+ */
+export const addManualAssignmentCheckJob = async (
+    delivery: any,
+    checkCount = 0,
+    delayMs = 60000,
+) => {
+    try {
+        await deliveryQueue.add(
+            `manual-assignment-check-${delivery._id}-${Date.now()}`,
+            {
+                type: "MANUAL_ASSIGNMENT_CHECK",
+                deliveryId: delivery._id,
+                customerId: delivery.customerId,
+                checkCount,
+            },
+            {
+                delay: delayMs,
+                removeOnComplete: true,
+                removeOnFail: true,
+            },
+        );
+        console.log(
+            `[Queue] Added manual assignment check job for ${delivery._id} (check ${checkCount})`,
+        );
+    } catch (error) {
+        console.error(`[Queue] Error adding manual assignment check job:`, error);
     }
 };

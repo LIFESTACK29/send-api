@@ -45,11 +45,13 @@ const VehicleSchema = new mongoose_1.Schema({
         enum: ["BICYCLE", "MOTORCYCLE", "TRICYCLE", "CAR"],
         required: true,
     },
-    brand: { type: String, required: true },
-    model: { type: String, required: true },
-    year: { type: Number, required: true },
-    color: { type: String, required: true },
-    licensePlate: { type: String, required: true },
+    // Vehicle creation is step-based (type first, details later), so these
+    // fields are optional at schema level and validated in onboarding steps.
+    brand: { type: String, required: false },
+    model: { type: String, required: false },
+    year: { type: Number, required: false },
+    color: { type: String, required: false },
+    licensePlate: { type: String, required: false },
     registrationNumber: { type: String },
     imageUrl: { type: String },
     additionalDetails: { type: mongoose_1.Schema.Types.Mixed, default: {} },
