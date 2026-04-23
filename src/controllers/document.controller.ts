@@ -4,7 +4,10 @@ import User from "../models/user.model";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
-import { syncUserOnboardingState } from "../services/onboarding.service";
+import {
+    getSettingsDocumentCompliance,
+    syncUserOnboardingState,
+} from "../services/onboarding.service";
 
 const REQUIRED_DOCUMENTS = [
     {
@@ -302,7 +305,7 @@ export const verifyRider: RequestHandler = CatchAsync(
         const { userId } = req.params;
         const { status, notes } = req.body;
 
-        if (!["active", "rejected"].includes(status)) {
+        if (!["active", "inactive", "rejected"].includes(status)) {
             res.status(400).json({
                 success: false,
                 message: "Invalid verification status",
@@ -310,13 +313,35 @@ export const verifyRider: RequestHandler = CatchAsync(
             return;
         }
 
+        if (status === "active") {
+            const compliance = await getSettingsDocumentCompliance(userId);
+            if (!compliance.documentsUploaded) {
+                res.status(400).json({
+                    success: false,
+                    message:
+                        "Rider cannot be activated until all required documents are uploaded in settings",
+                    data: {
+                        riderStatus: "inactive",
+                        missingDocuments: compliance.missingDocuments,
+                        nextStep: "settings_documents",
+                    },
+                });
+                return;
+            }
+        }
+
         const user = await User.findByIdAndUpdate(
             userId,
             {
                 riderStatus: status,
                 verificationStatus:
-                    status === "active" ? "approved" : "rejected",
-                onboardingStage: status === "active" ? "approved" : "rejected",
+                    status === "active"
+                        ? "approved"
+                        : status === "rejected"
+                          ? "rejected"
+                          : "not_submitted",
+                onboardingStage:
+                    status === "rejected" ? "rejected" : "approved",
                 verificationNotes: notes,
             },
             { new: true },

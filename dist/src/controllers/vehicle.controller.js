@@ -209,7 +209,7 @@ exports.uploadVehicleImage = (0, catchasync_util_1.CatchAsync)((req, res) => __a
         data: {
             vehicleId: vehicle._id,
             imageUrl,
-            nextStep: "documents",
+            nextStep: "submit_verification",
         },
     });
 }));
@@ -317,9 +317,8 @@ exports.submitForVerification = (0, catchasync_util_1.CatchAsync)((req, res) => 
         });
         return;
     }
-    // Check if all required data is present
+    // Check if onboarding-required data is present
     const vehicles = yield vehicle_model_1.default.find({ userId });
-    const documents = yield document_model_1.default.find({ userId });
     if (vehicles.length === 0) {
         res.status(400).json({
             success: false,
@@ -332,27 +331,6 @@ exports.submitForVerification = (0, catchasync_util_1.CatchAsync)((req, res) => 
         res.status(400).json({
             success: false,
             message: "Please complete all vehicle details",
-        });
-        return;
-    }
-    if (documents.length === 0) {
-        res.status(400).json({
-            success: false,
-            message: "Please upload all required documents",
-        });
-        return;
-    }
-    const requiredDocuments = [
-        "DRIVING_LICENSE",
-        "GOVERNMENT_ID",
-        "INSURANCE",
-        "REGISTRATION",
-    ];
-    const allDocumentsUploaded = requiredDocuments.every((docType) => documents.some((d) => d.documentType === docType));
-    if (!allDocumentsUploaded) {
-        res.status(400).json({
-            success: false,
-            message: "Please upload all required documents",
         });
         return;
     }

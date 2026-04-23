@@ -250,17 +250,36 @@ exports.verifyDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __await
 exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { userId } = req.params;
     const { status, notes } = req.body;
-    if (!["active", "rejected"].includes(status)) {
+    if (!["active", "inactive", "rejected"].includes(status)) {
         res.status(400).json({
             success: false,
             message: "Invalid verification status",
         });
         return;
     }
+    if (status === "active") {
+        const compliance = yield (0, onboarding_service_1.getSettingsDocumentCompliance)(userId);
+        if (!compliance.documentsUploaded) {
+            res.status(400).json({
+                success: false,
+                message: "Rider cannot be activated until all required documents are uploaded in settings",
+                data: {
+                    riderStatus: "inactive",
+                    missingDocuments: compliance.missingDocuments,
+                    nextStep: "settings_documents",
+                },
+            });
+            return;
+        }
+    }
     const user = yield user_model_1.default.findByIdAndUpdate(userId, {
         riderStatus: status,
-        verificationStatus: status === "active" ? "approved" : "rejected",
-        onboardingStage: status === "active" ? "approved" : "rejected",
+        verificationStatus: status === "active"
+            ? "approved"
+            : status === "rejected"
+                ? "rejected"
+                : "not_submitted",
+        onboardingStage: status === "rejected" ? "rejected" : "approved",
         verificationNotes: notes,
     }, { new: true });
     if (!user) {

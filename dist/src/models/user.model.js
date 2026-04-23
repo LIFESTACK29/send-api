@@ -80,8 +80,14 @@ const UserSchema = new mongoose_1.Schema({
     // Rider-specific fields
     riderStatus: {
         type: String,
-        enum: ["incomplete", "pending_verification", "active", "rejected"],
-        default: "incomplete",
+        enum: [
+            "inactive",
+            "incomplete",
+            "pending_verification",
+            "active",
+            "rejected",
+        ],
+        default: "inactive",
     },
     onboardingStage: {
         type: String,

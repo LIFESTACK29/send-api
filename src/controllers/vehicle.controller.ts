@@ -246,7 +246,7 @@ export const uploadVehicleImage: RequestHandler = CatchAsync(
             data: {
                 vehicleId: vehicle._id,
                 imageUrl,
-                nextStep: "documents",
+                nextStep: "submit_verification",
             },
         });
     },
@@ -376,9 +376,8 @@ export const submitForVerification: RequestHandler = CatchAsync(
             return;
         }
 
-        // Check if all required data is present
+        // Check if onboarding-required data is present
         const vehicles = await Vehicle.find({ userId });
-        const documents = await Document.find({ userId });
 
         if (vehicles.length === 0) {
             res.status(400).json({
@@ -396,32 +395,6 @@ export const submitForVerification: RequestHandler = CatchAsync(
             res.status(400).json({
                 success: false,
                 message: "Please complete all vehicle details",
-            });
-            return;
-        }
-
-        if (documents.length === 0) {
-            res.status(400).json({
-                success: false,
-                message: "Please upload all required documents",
-            });
-            return;
-        }
-
-        const requiredDocuments = [
-            "DRIVING_LICENSE",
-            "GOVERNMENT_ID",
-            "INSURANCE",
-            "REGISTRATION",
-        ];
-        const allDocumentsUploaded = requiredDocuments.every((docType) =>
-            documents.some((d) => d.documentType === docType),
-        );
-
-        if (!allDocumentsUploaded) {
-            res.status(400).json({
-                success: false,
-                message: "Please upload all required documents",
             });
             return;
         }

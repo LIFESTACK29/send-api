@@ -25,7 +25,12 @@ export interface IUser extends Document {
     isOnboarded: boolean;
     updatedAt: Date;
     // Rider-specific fields
-    riderStatus?: "incomplete" | "pending_verification" | "active" | "rejected";
+    riderStatus?:
+        | "inactive"
+        | "incomplete"
+        | "pending_verification"
+        | "active"
+        | "rejected";
     onboardingStage?:
         | "email_pending"
         | "profile_pending"
@@ -76,8 +81,14 @@ const UserSchema: Schema = new Schema(
         // Rider-specific fields
         riderStatus: {
             type: String,
-            enum: ["incomplete", "pending_verification", "active", "rejected"],
-            default: "incomplete",
+            enum: [
+                "inactive",
+                "incomplete",
+                "pending_verification",
+                "active",
+                "rejected",
+            ],
+            default: "inactive",
         },
         onboardingStage: {
             type: String,

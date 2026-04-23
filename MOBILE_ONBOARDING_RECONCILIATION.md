@@ -1,130 +1,82 @@
-# Frontend Onboarding Reconciliation
+# Frontend Reconciliation: Onboarding + Settings Documents
 
-## 1) Source Of Truth For Navigation
-Always navigate with `user.accessState` (or `/api/v1/onboarding/state`):
+## Main Change
+1. Documents are no longer part of onboarding steps.
+2. Riders upload documents from Settings.
+3. Rider remains `inactive` until required settings documents are uploaded and admin sets rider to `active`.
 
-1. If `accessState.canAccessHome === true` -> go to Home.
-2. Else route by `accessState.nextStep`.
+## Routing Source Of Truth
+Use `accessState` from:
+1. `POST /api/v1/auth/login`
+2. `GET /api/v1/auth/me`
+3. `GET /api/v1/onboarding/state`
+4. `GET /api/v1/user/profile`
+5. `GET /api/v1/riders/:userId/onboarding-status`
 
-`accessState` fields:
-1. `onboardingStage`
-2. `verificationStatus`
-3. `onboardingRequired`
-4. `canAccessHome`
-5. `accessStatus`
-6. `nextStep`
-7. `riderStatus` (riders)
-8. `onboardingProgress` (riders)
-9. `completionPercentage` (riders)
+If `accessState.canAccessHome` is `false`, route by `accessState.nextStep`.
 
-## 2) Stage To Screen Mapping
-1. `email_pending` -> `email_otp`
-2. `profile_pending` -> `profile_image`
-3. `vehicle_pending` -> `vehicle_details`
-4. `documents_pending` -> `documents`
-5. `review_pending` -> `submit_verification`
-6. `pending_admin_approval` -> `pending_admin_approval`
-7. `approved` -> `home`
-8. `rejected` -> `documents`
+## Next Steps
+1. `email_otp`
+2. `profile_image`
+3. `vehicle_details`
+4. `submit_verification`
+5. `pending_admin_approval`
+6. `settings_documents`
+7. `home`
 
-## 3) Vehicle Details Rules (Backend-Enforced)
+## Vehicle Rules (Backend-Enforced)
+1. `BICYCLE`: required `color`
+2. `MOTORCYCLE`: required `color`, `licensePlate`
+3. `TRICYCLE`: required `color`, `licensePlate`
+4. `CAR`: required `brand`, `model`, `year`, `color`, `licensePlate`
 
-### Required fields by `vehicleType`
-1. `BICYCLE`: `color`
-2. `MOTORCYCLE`: `color`, `licensePlate`
-3. `TRICYCLE`: `color`, `licensePlate`
-4. `CAR`: `brand`, `model`, `year`, `color`, `licensePlate`
+## Onboarding Completion (No Documents)
+Onboarding is complete when rider has:
+1. email verified
+2. profile image
+3. vehicle selected
+4. vehicle details complete (by vehicle type)
+5. vehicle image
+6. submitted for verification
 
-### Clarification from your request
-1. For `BICYCLE`, `brand/model/year/licensePlate` are optional.
-2. For `MOTORCYCLE`, `brand/model/year` are optional and `licensePlate` is required.
-3. For `TRICYCLE`, `brand/model/year` are optional.
-4. `vehicleImage` is still required before submission.
+## Settings Document Compliance
+Required document types:
+1. `DRIVING_LICENSE`
+2. `GOVERNMENT_ID`
+3. `INSURANCE`
+4. `REGISTRATION`
 
-## 4) Exact Backend Response Samples
+If any are missing:
+1. `accessState.canAccessHome = false`
+2. `accessState.nextStep = "settings_documents"`
+3. rider should remain `inactive`
 
-### A) `POST /api/v1/auth/login` (success, rider not yet approved)
+## Key Response Example (Settings Documents Missing)
 ```json
 {
-  "message": "Login successful",
-  "isOnboarded": true,
-  "token": "jwt_here",
-  "canAccessHome": false,
-  "nextStep": "vehicle_details",
-  "user": {
-    "id": "680abc123...",
-    "firstName": "Ifeanyi",
-    "lastName": "Daniel",
-    "email": "user@email.com",
-    "phoneNumber": "0813...",
-    "role": "rider",
-    "isOnboarded": true,
-    "riderStatus": "incomplete",
-    "onboardingStage": "vehicle_pending",
-    "verificationStatus": "not_submitted",
-    "profileImageUrl": "https://...",
-    "verificationNotes": null,
-    "accessState": {
-      "onboardingStage": "vehicle_pending",
-      "verificationStatus": "not_submitted",
-      "onboardingRequired": true,
-      "canAccessHome": false,
-      "accessStatus": "onboarding_incomplete",
-      "nextStep": "vehicle_details",
-      "riderStatus": "incomplete",
-      "onboardingProgress": {
-        "emailVerified": true,
-        "profileCompleted": true,
-        "vehicleSelected": true,
-        "vehicleDetailsCompleted": false,
-        "vehicleImageUploaded": false,
-        "documentsUploaded": false,
-        "submittedForVerification": false
-      },
-      "completionPercentage": 43
+  "accessState": {
+    "onboardingStage": "approved",
+    "verificationStatus": "approved",
+    "onboardingRequired": false,
+    "canAccessHome": false,
+    "accessStatus": "settings_incomplete",
+    "nextStep": "settings_documents",
+    "riderStatus": "inactive",
+    "settingsChecks": {
+      "documentsUploaded": false,
+      "missingDocuments": ["INSURANCE", "REGISTRATION"]
     }
   }
 }
 ```
 
-### B) `GET /api/v1/onboarding/state`
-```json
-{
-  "success": true,
-  "data": {
-    "userId": "680abc123...",
-    "role": "rider",
-    "riderStatus": "pending_verification",
-    "onboardingStage": "pending_admin_approval",
-    "verificationStatus": "pending",
-    "accessState": {
-      "onboardingStage": "pending_admin_approval",
-      "verificationStatus": "pending",
-      "onboardingRequired": true,
-      "canAccessHome": false,
-      "accessStatus": "pending_admin_approval",
-      "nextStep": "pending_admin_approval",
-      "riderStatus": "pending_verification",
-      "onboardingProgress": {
-        "emailVerified": true,
-        "profileCompleted": true,
-        "vehicleSelected": true,
-        "vehicleDetailsCompleted": true,
-        "vehicleImageUploaded": true,
-        "documentsUploaded": true,
-        "submittedForVerification": true
-      },
-      "completionPercentage": 100
-    }
-  }
-}
-```
+## API Responses You Should Expect
 
-### C) `POST /api/v1/riders/:userId/vehicles`
+### 1) Create vehicle
+`POST /api/v1/riders/:userId/vehicles`
 ```json
 {
   "success": true,
-  "message": "Vehicle created successfully",
   "data": {
     "vehicleId": "680veh...",
     "vehicleType": "MOTORCYCLE",
@@ -134,7 +86,8 @@ Always navigate with `user.accessState` (or `/api/v1/onboarding/state`):
 }
 ```
 
-### D) `PUT /api/v1/riders/:userId/vehicles/:vehicleId` (missing required)
+### 2) Update vehicle details (missing required)
+`PUT /api/v1/riders/:userId/vehicles/:vehicleId`
 ```json
 {
   "success": false,
@@ -142,88 +95,55 @@ Always navigate with `user.accessState` (or `/api/v1/onboarding/state`):
 }
 ```
 
-### E) `PUT /api/v1/riders/:userId/vehicles/:vehicleId` (success)
+### 3) Upload vehicle image
+`POST /api/v1/riders/:userId/vehicles/:vehicleId/image`
 ```json
 {
   "success": true,
-  "message": "Vehicle details updated successfully",
-  "data": {
-    "vehicleId": "680veh...",
-    "nextStep": "vehicle_image"
-  }
-}
-```
-
-### F) `POST /api/v1/riders/:userId/vehicles/:vehicleId/image`
-```json
-{
-  "success": true,
-  "message": "Vehicle image uploaded successfully",
   "data": {
     "vehicleId": "680veh...",
     "imageUrl": "https://...",
-    "nextStep": "documents"
+    "nextStep": "submit_verification"
   }
 }
 ```
 
-### G) `POST /api/v1/riders/:userId/documents`
+### 4) Submit verification
+`POST /api/v1/riders/:userId/submit-verification`
 ```json
 {
   "success": true,
-  "message": "Document uploaded successfully",
   "data": {
-    "documentId": "680doc...",
-    "documentType": "DRIVING_LICENSE",
+    "riderStatus": "pending_verification",
+    "onboardingStage": "pending_admin_approval",
     "verificationStatus": "pending"
   }
 }
 ```
 
-### H) `POST /api/v1/riders/:userId/submit-verification`
+### 5) Admin tries to activate rider with missing settings documents
+`PUT /api/v1/riders/admin/riders/:userId/verify`
 ```json
 {
-  "success": true,
-  "message": "Submitted for verification successfully",
+  "success": false,
+  "message": "Rider cannot be activated until all required documents are uploaded in settings",
   "data": {
-    "userId": "680abc123...",
-    "riderStatus": "pending_verification",
-    "onboardingStage": "pending_admin_approval",
-    "verificationStatus": "pending",
-    "accessState": {
-      "onboardingStage": "pending_admin_approval",
-      "verificationStatus": "pending",
-      "onboardingRequired": true,
-      "canAccessHome": false,
-      "accessStatus": "pending_admin_approval",
-      "nextStep": "pending_admin_approval"
-    },
-    "message": "Your application is under review. You'll be notified once verified."
+    "riderStatus": "inactive",
+    "missingDocuments": ["INSURANCE"],
+    "nextStep": "settings_documents"
   }
 }
 ```
 
-### I) Rider tries home endpoints before approval (`403`)
+### 6) Protected rider home APIs when blocked
 ```json
 {
   "code": "RIDER_HOME_LOCKED",
-  "message": "Verification is pending admin approval",
   "canAccessHome": false,
-  "riderStatus": "pending_verification",
-  "onboardingStage": "pending_admin_approval",
-  "verificationStatus": "pending",
-  "nextStep": "pending_admin_approval"
+  "nextStep": "settings_documents",
+  "riderStatus": "inactive",
+  "onboardingStage": "approved",
+  "verificationStatus": "approved"
 }
 ```
-
-## 5) Frontend Boot Flow
-On app launch with token:
-
-1. `GET /api/v1/onboarding/state`
-2. Read `data.accessState`
-3. Route:
-- `canAccessHome = true` -> Home
-- else -> screen mapped by `nextStep`
-
-This guarantees users never restart onboarding from scratch after app close.
 
