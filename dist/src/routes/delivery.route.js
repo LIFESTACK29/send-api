@@ -7,6 +7,7 @@ const upload_middleware_1 = require("../middlewares/upload.middleware");
 const router = (0, express_1.Router)();
 // Protect all delivery routes
 router.use(auth_middleware_1.authenticate);
+router.use(auth_middleware_1.requireActiveRiderAccess);
 router.get("/nearby-riders", delivery_controller_1.getNearbyRiders);
 router.get("/my-deliveries", delivery_controller_1.getMyDeliveries);
 router.post("/calculate-fee", delivery_controller_1.calculateDeliveryFee);

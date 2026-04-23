@@ -14,6 +14,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updatePushToken = exports.deleteAddress = exports.editAddress = exports.addAddress = exports.updateProfile = exports.getProfile = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
+const onboarding_service_1 = require("../services/onboarding.service");
+const buildUserResponse = (user) => __awaiter(void 0, void 0, void 0, function* () {
+    const accessState = yield (0, onboarding_service_1.getUserAccessState)(user);
+    return {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        isOnboarded: user.isOnboarded,
+        riderStatus: user.riderStatus,
+        profileImageUrl: user.profileImageUrl,
+        verificationNotes: user.verificationNotes,
+        accessState,
+    };
+});
 /**
  * @desc    Get current user profile
  * @route   GET /api/v1/user/profile
@@ -33,16 +50,7 @@ const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             return;
         }
         res.status(200).json({
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {
@@ -79,16 +87,7 @@ const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         yield user.save();
         res.status(200).json({
             message: "Profile updated successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {
@@ -122,16 +121,7 @@ const addAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         }
         res.status(201).json({
             message: "Address added successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {
@@ -181,16 +171,7 @@ const editAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         }
         res.status(200).json({
             message: "Address updated successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {
@@ -222,16 +203,7 @@ const deleteAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         }
         res.status(200).json({
             message: "Address deleted successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {

@@ -19,6 +19,7 @@ const otp_model_1 = __importDefault(require("../models/otp.model"));
 const email_service_1 = require("../services/email.service");
 const upload_middleware_1 = require("../middlewares/upload.middleware");
 const catchasync_util_1 = require("../utils/catchasync.util");
+const onboarding_service_1 = require("../services/onboarding.service");
 /**
  * Generate a random 6-digit OTP code
  */
@@ -44,6 +45,22 @@ const signToken = (userId, role) => {
         expiresIn: "7d",
     });
 };
+const buildUserResponse = (user) => __awaiter(void 0, void 0, void 0, function* () {
+    const accessState = yield (0, onboarding_service_1.getUserAccessState)(user);
+    return {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        isOnboarded: user.isOnboarded,
+        riderStatus: user.riderStatus,
+        profileImageUrl: user.profileImageUrl,
+        verificationNotes: user.verificationNotes,
+        accessState,
+    };
+});
 /**
  * @desc    Register a new user
  * @route   POST /api/v1/auth/register
@@ -144,14 +161,7 @@ const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             message: "Email verified successfully",
             isOnboarded: true,
             token,
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {
@@ -200,7 +210,6 @@ exports.resendOtp = resendOtp;
 const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, password } = req.body;
-        console.log(email);
         if (!email || !password) {
             res.status(400).json({
                 message: "Email and password are required",
@@ -226,23 +235,25 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 message: "Please verify your email. OTP has been sent.",
                 isOnboarded: false,
                 userId: user._id,
+                accessState: {
+                    onboardingRequired: true,
+                    canAccessHome: false,
+                    accessStatus: "email_verification_required",
+                    nextStep: "email_otp",
+                },
             });
             return;
         }
         // Generate JWT
         const token = signToken(user._id.toString(), user.role);
+        const userResponse = yield buildUserResponse(user);
         res.status(200).json({
             message: "Login successful",
             isOnboarded: true,
             token,
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-            },
+            canAccessHome: userResponse.accessState.canAccessHome,
+            nextStep: userResponse.accessState.nextStep,
+            user: userResponse,
         });
     }
     catch (error) {
@@ -265,16 +276,7 @@ const getMe = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         res.status(200).json({
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: yield buildUserResponse(user),
         });
     }
     catch (error) {

@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { authenticate } from "../middlewares/auth.middleware";
+import {
+    authenticate,
+    requireActiveRiderAccess,
+} from "../middlewares/auth.middleware";
 import {
     requestDelivery,
     acceptDelivery,
@@ -18,6 +21,7 @@ const router = Router();
 
 // Protect all delivery routes
 router.use(authenticate);
+router.use(requireActiveRiderAccess);
 router.get("/nearby-riders", getNearbyRiders);
 router.get("/my-deliveries", getMyDeliveries);
 router.post("/calculate-fee", calculateDeliveryFee);

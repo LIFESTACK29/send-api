@@ -1,6 +1,25 @@
 import { Response, RequestHandler } from "express";
 import User from "../models/user.model";
 import { AuthRequest } from "../types/user.type";
+import { getUserAccessState } from "../services/onboarding.service";
+
+const buildUserResponse = async (user: any) => {
+    const accessState = await getUserAccessState(user);
+
+    return {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        isOnboarded: user.isOnboarded,
+        riderStatus: user.riderStatus,
+        profileImageUrl: user.profileImageUrl,
+        verificationNotes: user.verificationNotes,
+        accessState,
+    };
+};
 
 /**
  * @desc    Get current user profile
@@ -27,16 +46,7 @@ export const getProfile: RequestHandler = async (
         }
 
         res.status(200).json({
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in getProfile:", error);
@@ -78,16 +88,7 @@ export const updateProfile: RequestHandler = async (
 
         res.status(200).json({
             message: "Profile updated successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in updateProfile:", error);
@@ -132,16 +133,7 @@ export const addAddress: RequestHandler = async (
 
         res.status(201).json({
             message: "Address added successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in addAddress:", error);
@@ -202,16 +194,7 @@ export const editAddress: RequestHandler = async (
 
         res.status(200).json({
             message: "Address updated successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in editAddress:", error);
@@ -252,16 +235,7 @@ export const deleteAddress: RequestHandler = async (
 
         res.status(200).json({
             message: "Address deleted successfully",
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in deleteAddress:", error);

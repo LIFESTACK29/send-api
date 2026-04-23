@@ -18,6 +18,7 @@ const user_model_1 = __importDefault(require("../models/user.model"));
 const document_model_1 = __importDefault(require("../models/document.model"));
 const upload_middleware_1 = require("../middlewares/upload.middleware");
 const catchasync_util_1 = require("../utils/catchasync.util");
+const onboarding_service_1 = require("../services/onboarding.service");
 const VEHICLE_TYPES = [
     {
         type: "BICYCLE",
@@ -246,40 +247,17 @@ exports.getOnboardingStatus = (0, catchasync_util_1.CatchAsync)((req, res) => __
         });
         return;
     }
-    // Check vehicles
+    const accessState = yield (0, onboarding_service_1.getRiderOnboardingState)(userId);
     const vehicles = yield vehicle_model_1.default.find({ userId });
-    const vehicleComplete = vehicles.length > 0 &&
-        vehicles.every((v) => Boolean(v.brand &&
-            v.get("model") &&
-            v.year &&
-            v.color &&
-            v.imageUrl));
-    // Check documents
     const documents = yield document_model_1.default.find({ userId });
-    const requiredDocuments = [
-        "DRIVING_LICENSE",
-        "GOVERNMENT_ID",
-        "INSURANCE",
-        "REGISTRATION",
-    ];
-    const allDocumentsUploaded = requiredDocuments.every((docType) => documents.some((d) => d.documentType === docType));
-    const progress = {
-        emailVerified: user.isOnboarded,
-        profileCompleted: !!user.profileImageUrl,
-        vehicleSelected: vehicles.length > 0,
-        vehicleDetailsCompleted: vehicleComplete,
-        documentsUploaded: allDocumentsUploaded,
-        submittedForVerification: user.riderStatus === "pending_verification" ||
-            user.riderStatus === "active",
-    };
-    const completionPercentage = Object.values(progress).filter(Boolean).length;
     res.status(200).json({
         success: true,
         data: {
             userId,
-            onboardingProgress: progress,
             riderStatus: user.riderStatus,
-            completionPercentage: (completionPercentage / 6) * 100,
+            accessState,
+            onboardingProgress: accessState.onboardingProgress,
+            completionPercentage: accessState.completionPercentage,
             vehicleDetails: {
                 totalVehicles: vehicles.length,
                 vehicles: vehicles.map((v) => ({
@@ -341,15 +319,31 @@ exports.submitForVerification = (0, catchasync_util_1.CatchAsync)((req, res) => 
         });
         return;
     }
+    const requiredDocuments = [
+        "DRIVING_LICENSE",
+        "GOVERNMENT_ID",
+        "INSURANCE",
+        "REGISTRATION",
+    ];
+    const allDocumentsUploaded = requiredDocuments.every((docType) => documents.some((d) => d.documentType === docType));
+    if (!allDocumentsUploaded) {
+        res.status(400).json({
+            success: false,
+            message: "Please upload all required documents",
+        });
+        return;
+    }
     // Update user status to pending verification
     user.riderStatus = "pending_verification";
     yield user.save();
+    const accessState = yield (0, onboarding_service_1.getRiderOnboardingState)(userId);
     res.status(200).json({
         success: true,
         message: "Submitted for verification successfully",
         data: {
             userId,
             riderStatus: user.riderStatus,
+            accessState,
             message: "Your application is under review. You'll be notified once verified.",
         },
     });

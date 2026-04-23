@@ -6,6 +6,7 @@ import { sendOtpEmail } from "../services/email.service";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
+import { getUserAccessState } from "../services/onboarding.service";
 
 /**
  * Generate a random 6-digit OTP code
@@ -38,6 +39,24 @@ const signToken = (userId: string, role: string): string => {
     return jwt.sign({ userId, role }, process.env.JWT_SECRET as string, {
         expiresIn: "7d",
     });
+};
+
+const buildUserResponse = async (user: any) => {
+    const accessState = await getUserAccessState(user);
+
+    return {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        isOnboarded: user.isOnboarded,
+        riderStatus: user.riderStatus,
+        profileImageUrl: user.profileImageUrl,
+        verificationNotes: user.verificationNotes,
+        accessState,
+    };
 };
 
 /**
@@ -169,14 +188,7 @@ export const verifyOtp: RequestHandler = async (
             message: "Email verified successfully",
             isOnboarded: true,
             token,
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in verifyOtp:", error);
@@ -232,7 +244,6 @@ export const resendOtp: RequestHandler = async (
 export const login: RequestHandler = async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
-        console.log(email);
         if (!email || !password) {
             res.status(400).json({
                 message: "Email and password are required",
@@ -264,25 +275,27 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
                 message: "Please verify your email. OTP has been sent.",
                 isOnboarded: false,
                 userId: user._id,
+                accessState: {
+                    onboardingRequired: true,
+                    canAccessHome: false,
+                    accessStatus: "email_verification_required",
+                    nextStep: "email_otp",
+                },
             });
             return;
         }
 
         // Generate JWT
         const token = signToken(user._id.toString(), user.role);
+        const userResponse = await buildUserResponse(user);
 
         res.status(200).json({
             message: "Login successful",
             isOnboarded: true,
             token,
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-            },
+            canAccessHome: userResponse.accessState.canAccessHome,
+            nextStep: userResponse.accessState.nextStep,
+            user: userResponse,
         });
     } catch (error: any) {
         console.error("Error in login:", error);
@@ -308,16 +321,7 @@ export const getMe: RequestHandler = async (
         }
 
         res.status(200).json({
-            user: {
-                id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phoneNumber: user.phoneNumber,
-                role: user.role,
-                isOnboarded: user.isOnboarded,
-                // addresses: user.addresses,
-            },
+            user: await buildUserResponse(user),
         });
     } catch (error: any) {
         console.error("Error in getMe:", error);

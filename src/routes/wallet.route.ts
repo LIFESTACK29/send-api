@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../middlewares/auth.middleware";
+import { authenticate, requireActiveRiderAccess } from "../middlewares/auth.middleware";
 import {
     createWallet,
     getWalletBalance,
@@ -22,6 +22,7 @@ router.get("/callback", handleCallback);
 
 // All routes below require authentication
 router.use(authenticate);
+router.use(requireActiveRiderAccess);
 
 router.post("/create", createWallet);
 router.get("/status", getWalletStatus);

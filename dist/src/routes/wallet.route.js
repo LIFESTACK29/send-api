@@ -9,6 +9,7 @@ router.post("/webhook", wallet_controller_1.handleWebhook);
 router.get("/callback", wallet_controller_1.handleCallback);
 // All routes below require authentication
 router.use(auth_middleware_1.authenticate);
+router.use(auth_middleware_1.requireActiveRiderAccess);
 router.post("/create", wallet_controller_1.createWallet);
 router.get("/status", wallet_controller_1.getWalletStatus);
 router.get("/balance", wallet_controller_1.getWalletBalance);
