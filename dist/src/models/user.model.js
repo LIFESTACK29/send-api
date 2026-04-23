@@ -70,11 +70,11 @@ const UserSchema = new mongoose_1.Schema({
         type: {
             type: String,
             enum: ["Point"],
-            default: "Point",
         },
         coordinates: {
             type: [Number],
         },
+        default: undefined,
     },
     addresses: { type: [AddressSchema], default: [] },
     pushToken: { type: String },
@@ -87,7 +87,12 @@ const UserSchema = new mongoose_1.Schema({
     profileImageUrl: { type: String },
     verificationNotes: { type: String },
 }, { timestamps: true });
-UserSchema.index({ currentLocation: "2dsphere" });
+UserSchema.index({ currentLocation: "2dsphere" }, {
+    partialFilterExpression: {
+        "currentLocation.type": "Point",
+        "currentLocation.coordinates.1": { $exists: true },
+    },
+});
 // Hash password before saving
 UserSchema.pre("save", function (next) {
     return __awaiter(this, void 0, void 0, function* () {
