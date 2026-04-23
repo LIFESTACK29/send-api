@@ -26,6 +26,16 @@ export interface IUser extends Document {
     updatedAt: Date;
     // Rider-specific fields
     riderStatus?: "incomplete" | "pending_verification" | "active" | "rejected";
+    onboardingStage?:
+        | "email_pending"
+        | "profile_pending"
+        | "vehicle_pending"
+        | "documents_pending"
+        | "review_pending"
+        | "pending_admin_approval"
+        | "approved"
+        | "rejected";
+    verificationStatus?: "not_submitted" | "pending" | "approved" | "rejected";
     profileImageUrl?: string;
     verificationNotes?: string;
     comparePassword(candidatePassword: string): Promise<boolean>;
@@ -68,6 +78,25 @@ const UserSchema: Schema = new Schema(
             type: String,
             enum: ["incomplete", "pending_verification", "active", "rejected"],
             default: "incomplete",
+        },
+        onboardingStage: {
+            type: String,
+            enum: [
+                "email_pending",
+                "profile_pending",
+                "vehicle_pending",
+                "documents_pending",
+                "review_pending",
+                "pending_admin_approval",
+                "approved",
+                "rejected",
+            ],
+            default: "email_pending",
+        },
+        verificationStatus: {
+            type: String,
+            enum: ["not_submitted", "pending", "approved", "rejected"],
+            default: "not_submitted",
         },
         profileImageUrl: { type: String },
         verificationNotes: { type: String },

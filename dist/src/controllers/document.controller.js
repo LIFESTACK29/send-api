@@ -17,6 +17,7 @@ const document_model_1 = __importDefault(require("../models/document.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const upload_middleware_1 = require("../middlewares/upload.middleware");
 const catchasync_util_1 = require("../utils/catchasync.util");
+const onboarding_service_1 = require("../services/onboarding.service");
 const REQUIRED_DOCUMENTS = [
     {
         type: "DRIVING_LICENSE",
@@ -112,6 +113,7 @@ exports.uploadDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __await
         }
         existingDoc.verificationStatus = "pending";
         yield existingDoc.save();
+        yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
         res.status(200).json({
             success: true,
             message: "Document updated successfully",
@@ -133,6 +135,7 @@ exports.uploadDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __await
         expiryDate: expiryDate ? new Date(expiryDate) : undefined,
         verificationStatus: "pending",
     });
+    yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
     res.status(201).json({
         success: true,
         message: "Document uploaded successfully",
@@ -178,6 +181,7 @@ exports.getDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(
         });
         return;
     }
+    yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
     res.status(200).json({
         success: true,
         data: document,
@@ -255,6 +259,8 @@ exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(
     }
     const user = yield user_model_1.default.findByIdAndUpdate(userId, {
         riderStatus: status,
+        verificationStatus: status === "active" ? "approved" : "rejected",
+        onboardingStage: status === "active" ? "approved" : "rejected",
         verificationNotes: notes,
     }, { new: true });
     if (!user) {
@@ -270,6 +276,8 @@ exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(
         data: {
             userId: user._id,
             riderStatus: user.riderStatus,
+            onboardingStage: user.onboardingStage,
+            verificationStatus: user.verificationStatus,
             verificationNotes: user.verificationNotes,
         },
     });

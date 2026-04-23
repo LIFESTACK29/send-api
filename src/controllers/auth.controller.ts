@@ -6,7 +6,10 @@ import { sendOtpEmail } from "../services/email.service";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
-import { getUserAccessState } from "../services/onboarding.service";
+import {
+    getUserAccessState,
+    syncUserOnboardingState,
+} from "../services/onboarding.service";
 
 /**
  * Generate a random 6-digit OTP code
@@ -53,6 +56,8 @@ const buildUserResponse = async (user: any) => {
         role: user.role,
         isOnboarded: user.isOnboarded,
         riderStatus: user.riderStatus,
+        onboardingStage: user.onboardingStage,
+        verificationStatus: user.verificationStatus,
         profileImageUrl: user.profileImageUrl,
         verificationNotes: user.verificationNotes,
         accessState,
@@ -118,6 +123,8 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
             password,
             role,
             isOnboarded: false,
+            onboardingStage: "email_pending",
+            verificationStatus: "not_submitted",
         });
 
         // Generate and send OTP
@@ -178,6 +185,12 @@ export const verifyOtp: RequestHandler = async (
             return;
         }
 
+        const syncedUser = await syncUserOnboardingState(user._id.toString());
+        if (!syncedUser) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
         // Clean up used OTP
         await Otp.deleteMany({ userId });
 
@@ -188,7 +201,7 @@ export const verifyOtp: RequestHandler = async (
             message: "Email verified successfully",
             isOnboarded: true,
             token,
-            user: await buildUserResponse(user),
+            user: await buildUserResponse(syncedUser),
         });
     } catch (error: any) {
         console.error("Error in verifyOtp:", error);
@@ -276,6 +289,8 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
                 isOnboarded: false,
                 userId: user._id,
                 accessState: {
+                    onboardingStage: "email_pending",
+                    verificationStatus: "not_submitted",
                     onboardingRequired: true,
                     canAccessHome: false,
                     accessStatus: "email_verification_required",
@@ -371,11 +386,17 @@ export const uploadProfileImage: RequestHandler = CatchAsync(
             return;
         }
 
+        const syncedUser = await syncUserOnboardingState(user._id.toString());
+        const accessState = syncedUser
+            ? await getUserAccessState(syncedUser)
+            : undefined;
+
         res.status(200).json({
             success: true,
             message: "Profile image uploaded successfully",
             data: {
                 profileImageUrl: imageUrl,
+                accessState,
             },
         });
     },

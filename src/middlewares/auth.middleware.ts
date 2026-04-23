@@ -1,7 +1,10 @@
 import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { AuthRequest, AuthPayload } from "../types/user.type";
-import User from "../models/user.model";
+import {
+    getUserAccessState,
+    syncUserOnboardingState,
+} from "../services/onboarding.service";
 
 /**
  * Authenticate middleware — verifies JWT from Authorization header
@@ -108,44 +111,29 @@ export const requireActiveRiderAccess = async (
             return;
         }
 
-        const user = await User.findById(req.user.userId).select(
-            "isOnboarded riderStatus role",
-        );
+        const user = await syncUserOnboardingState(req.user.userId);
 
         if (!user) {
             res.status(404).json({ message: "User not found" });
             return;
         }
 
-        if (!user.isOnboarded) {
-            res.status(403).json({
-                message: "Email verification required",
-                code: "EMAIL_VERIFICATION_REQUIRED",
-                canAccessHome: false,
-                nextStep: "email_otp",
-            });
-            return;
-        }
+        const accessState = await getUserAccessState(user);
 
-        if (user.riderStatus !== "active") {
-            const nextStep =
-                user.riderStatus === "pending_verification"
-                    ? "pending_admin_approval"
-                    : user.riderStatus === "rejected"
-                      ? "documents"
-                      : "profile_image";
-
+        if (!accessState.canAccessHome) {
             res.status(403).json({
-                message:
-                    user.riderStatus === "pending_verification"
-                        ? "Verification is pending admin approval"
-                        : user.riderStatus === "rejected"
-                          ? "Verification was rejected. Please update required details."
-                          : "Complete rider onboarding to continue",
                 code: "RIDER_HOME_LOCKED",
-                canAccessHome: false,
-                riderStatus: user.riderStatus,
-                nextStep,
+                message:
+                    accessState.nextStep === "pending_admin_approval"
+                        ? "Verification is pending admin approval"
+                        : accessState.nextStep === "email_otp"
+                          ? "Email verification required"
+                          : "Complete rider onboarding to continue",
+                canAccessHome: accessState.canAccessHome,
+                riderStatus: accessState.riderStatus,
+                onboardingStage: accessState.onboardingStage,
+                verificationStatus: accessState.verificationStatus,
+                nextStep: accessState.nextStep,
             });
             return;
         }

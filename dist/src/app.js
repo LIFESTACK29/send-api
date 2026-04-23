@@ -14,6 +14,7 @@ const delivery_route_1 = __importDefault(require("./routes/delivery.route"));
 const wallet_route_1 = __importDefault(require("./routes/wallet.route"));
 const vehicle_route_1 = __importDefault(require("./routes/vehicle.route"));
 const document_route_1 = __importDefault(require("./routes/document.route"));
+const onboarding_route_1 = __importDefault(require("./routes/onboarding.route"));
 const error_middleware_1 = __importDefault(require("./middlewares/error.middleware"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -30,6 +31,7 @@ app.use("/api/v1/auth", auth_route_1.default);
 app.use("/api/v1/user", user_route_1.default);
 app.use("/api/v1/deliveries", delivery_route_1.default);
 app.use("/api/v1/wallet", wallet_route_1.default);
+app.use("/api/v1/onboarding", onboarding_route_1.default);
 app.use("/api/v1/riders", vehicle_route_1.default);
 app.use("/api/v1/riders", document_route_1.default);
 // Error handler

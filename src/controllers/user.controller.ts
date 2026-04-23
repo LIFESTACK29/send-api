@@ -15,6 +15,8 @@ const buildUserResponse = async (user: any) => {
         role: user.role,
         isOnboarded: user.isOnboarded,
         riderStatus: user.riderStatus,
+        onboardingStage: user.onboardingStage,
+        verificationStatus: user.verificationStatus,
         profileImageUrl: user.profileImageUrl,
         verificationNotes: user.verificationNotes,
         accessState,

@@ -5,7 +5,10 @@ import Document from "../models/document.model";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
-import { getRiderOnboardingState } from "../services/onboarding.service";
+import {
+    getRiderOnboardingState,
+    syncUserOnboardingState,
+} from "../services/onboarding.service";
 
 const VEHICLE_TYPES = [
     {
@@ -33,6 +36,26 @@ const VEHICLE_TYPES = [
         description: "Four-wheeled sedan/sedan vehicle",
     },
 ];
+
+const getRequiredFieldsForVehicleType = (vehicleType: string): string[] => {
+    switch (vehicleType) {
+        case "BICYCLE":
+            return ["color"];
+        case "MOTORCYCLE":
+            return ["color", "licensePlate"];
+        case "TRICYCLE":
+            return ["color", "licensePlate"];
+        case "CAR":
+            return ["brand", "model", "year", "color", "licensePlate"];
+        default:
+            return ["color"];
+    }
+};
+
+const isVehicleDetailsComplete = (vehicle: any): boolean => {
+    const requiredFields = getRequiredFieldsForVehicleType(vehicle.vehicleType);
+    return requiredFields.every((field) => Boolean(vehicle[field]));
+};
 
 /**
  * @desc    Get available vehicle types
@@ -86,17 +109,10 @@ export const createVehicle: RequestHandler = CatchAsync(
             verificationStatus: "pending",
         });
 
+        await syncUserOnboardingState(userId);
+
         // Determine required fields based on vehicle type
-        const requiredFields = [
-            "brand",
-            "model",
-            "year",
-            "color",
-            "licensePlate",
-        ];
-        if (vehicleType !== "BICYCLE") {
-            requiredFields.push("registrationNumber");
-        }
+        const requiredFields = getRequiredFieldsForVehicleType(vehicleType);
 
         res.status(201).json({
             success: true,
@@ -129,29 +145,7 @@ export const updateVehicleDetails: RequestHandler = CatchAsync(
             additionalDetails,
         } = req.body;
 
-        // Validate required fields
-        if (!brand || !model || !year || !color || !licensePlate) {
-            res.status(400).json({
-                success: false,
-                message: "Missing required fields",
-            });
-            return;
-        }
-
-        // Find and update vehicle
-        const vehicle = await Vehicle.findOneAndUpdate(
-            { _id: vehicleId, userId },
-            {
-                brand,
-                model,
-                year,
-                color,
-                licensePlate,
-                registrationNumber,
-                additionalDetails: additionalDetails || {},
-            },
-            { new: true },
-        );
+        const vehicle = await Vehicle.findOne({ _id: vehicleId, userId });
 
         if (!vehicle) {
             res.status(404).json({
@@ -160,6 +154,41 @@ export const updateVehicleDetails: RequestHandler = CatchAsync(
             });
             return;
         }
+
+        const nextVehicleData = {
+            brand: brand ?? vehicle.brand,
+            model: model ?? vehicle.model,
+            year: year ?? vehicle.year,
+            color: color ?? vehicle.color,
+            licensePlate: licensePlate ?? vehicle.licensePlate,
+        };
+
+        const requiredFields = getRequiredFieldsForVehicleType(vehicle.vehicleType);
+        const missingRequiredFields = requiredFields.filter(
+            (field) => !nextVehicleData[field as keyof typeof nextVehicleData],
+        );
+
+        if (missingRequiredFields.length > 0) {
+            res.status(400).json({
+                success: false,
+                message: `Missing required fields for ${vehicle.vehicleType.toLowerCase()}: ${missingRequiredFields.join(", ")}`,
+            });
+            return;
+        }
+
+        vehicle.brand = nextVehicleData.brand;
+        vehicle.model = nextVehicleData.model;
+        vehicle.year = nextVehicleData.year;
+        vehicle.color = nextVehicleData.color;
+        vehicle.licensePlate = nextVehicleData.licensePlate;
+        if (registrationNumber !== undefined)
+            vehicle.registrationNumber = registrationNumber;
+        if (additionalDetails !== undefined)
+            vehicle.additionalDetails = additionalDetails || {};
+
+        await vehicle.save();
+
+        await syncUserOnboardingState(userId);
 
         res.status(200).json({
             success: true,
@@ -209,6 +238,7 @@ export const uploadVehicleImage: RequestHandler = CatchAsync(
         // Update vehicle with image
         vehicle.imageUrl = imageUrl;
         await vehicle.save();
+        await syncUserOnboardingState(userId);
 
         res.status(200).json({
             success: true,
@@ -282,7 +312,7 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
         const { userId } = req.params;
 
         // Get user
-        const user = await User.findById(userId);
+        const user = await syncUserOnboardingState(userId);
         if (!user) {
             res.status(404).json({
                 success: false,
@@ -300,6 +330,8 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
             data: {
                 userId,
                 riderStatus: user.riderStatus,
+                onboardingStage: accessState.onboardingStage,
+                verificationStatus: accessState.verificationStatus,
                 accessState,
                 onboardingProgress: accessState.onboardingProgress,
                 completionPercentage: accessState.completionPercentage,
@@ -356,10 +388,8 @@ export const submitForVerification: RequestHandler = CatchAsync(
             return;
         }
 
-        const vehicleComplete = vehicles.every((v) =>
-            Boolean(
-                v.brand && v.get("model") && v.year && v.color && v.imageUrl,
-            ),
+        const vehicleComplete = vehicles.every(
+            (v) => isVehicleDetailsComplete(v) && Boolean(v.imageUrl),
         );
 
         if (!vehicleComplete) {
@@ -398,8 +428,11 @@ export const submitForVerification: RequestHandler = CatchAsync(
 
         // Update user status to pending verification
         user.riderStatus = "pending_verification";
+        user.verificationStatus = "pending";
+        user.onboardingStage = "pending_admin_approval";
         await user.save();
 
+        const syncedUser = await syncUserOnboardingState(userId);
         const accessState = await getRiderOnboardingState(userId);
 
         res.status(200).json({
@@ -408,6 +441,8 @@ export const submitForVerification: RequestHandler = CatchAsync(
             data: {
                 userId,
                 riderStatus: user.riderStatus,
+                onboardingStage: syncedUser?.onboardingStage,
+                verificationStatus: syncedUser?.verificationStatus,
                 accessState,
                 message:
                     "Your application is under review. You'll be notified once verified.",

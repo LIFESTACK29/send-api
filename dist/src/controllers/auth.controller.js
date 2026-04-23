@@ -56,6 +56,8 @@ const buildUserResponse = (user) => __awaiter(void 0, void 0, void 0, function* 
         role: user.role,
         isOnboarded: user.isOnboarded,
         riderStatus: user.riderStatus,
+        onboardingStage: user.onboardingStage,
+        verificationStatus: user.verificationStatus,
         profileImageUrl: user.profileImageUrl,
         verificationNotes: user.verificationNotes,
         accessState,
@@ -108,6 +110,8 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             password,
             role,
             isOnboarded: false,
+            onboardingStage: "email_pending",
+            verificationStatus: "not_submitted",
         });
         // Generate and send OTP
         yield createAndSendOtp(user._id.toString(), user.email);
@@ -153,6 +157,11 @@ const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             res.status(404).json({ message: "User not found" });
             return;
         }
+        const syncedUser = yield (0, onboarding_service_1.syncUserOnboardingState)(user._id.toString());
+        if (!syncedUser) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
         // Clean up used OTP
         yield otp_model_1.default.deleteMany({ userId });
         // Generate JWT
@@ -161,7 +170,7 @@ const verifyOtp = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             message: "Email verified successfully",
             isOnboarded: true,
             token,
-            user: yield buildUserResponse(user),
+            user: yield buildUserResponse(syncedUser),
         });
     }
     catch (error) {
@@ -236,6 +245,8 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 isOnboarded: false,
                 userId: user._id,
                 accessState: {
+                    onboardingStage: "email_pending",
+                    verificationStatus: "not_submitted",
                     onboardingRequired: true,
                     canAccessHome: false,
                     accessStatus: "email_verification_required",
@@ -318,11 +329,16 @@ exports.uploadProfileImage = (0, catchasync_util_1.CatchAsync)((req, res) => __a
         });
         return;
     }
+    const syncedUser = yield (0, onboarding_service_1.syncUserOnboardingState)(user._id.toString());
+    const accessState = syncedUser
+        ? yield (0, onboarding_service_1.getUserAccessState)(syncedUser)
+        : undefined;
     res.status(200).json({
         success: true,
         message: "Profile image uploaded successfully",
         data: {
             profileImageUrl: imageUrl,
+            accessState,
         },
     });
 }));

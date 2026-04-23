@@ -4,6 +4,7 @@ import User from "../models/user.model";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
+import { syncUserOnboardingState } from "../services/onboarding.service";
 
 const REQUIRED_DOCUMENTS = [
     {
@@ -118,6 +119,7 @@ export const uploadDocument: RequestHandler = CatchAsync(
             existingDoc.verificationStatus = "pending";
 
             await existingDoc.save();
+            await syncUserOnboardingState(userId);
 
             res.status(200).json({
                 success: true,
@@ -145,6 +147,7 @@ export const uploadDocument: RequestHandler = CatchAsync(
             expiryDate: expiryDate ? new Date(expiryDate) : undefined,
             verificationStatus: "pending",
         });
+        await syncUserOnboardingState(userId);
 
         res.status(201).json({
             success: true,
@@ -206,6 +209,8 @@ export const getDocument: RequestHandler = CatchAsync(
             });
             return;
         }
+
+        await syncUserOnboardingState(userId);
 
         res.status(200).json({
             success: true,
@@ -309,6 +314,9 @@ export const verifyRider: RequestHandler = CatchAsync(
             userId,
             {
                 riderStatus: status,
+                verificationStatus:
+                    status === "active" ? "approved" : "rejected",
+                onboardingStage: status === "active" ? "approved" : "rejected",
                 verificationNotes: notes,
             },
             { new: true },
@@ -328,6 +336,8 @@ export const verifyRider: RequestHandler = CatchAsync(
             data: {
                 userId: user._id,
                 riderStatus: user.riderStatus,
+                onboardingStage: user.onboardingStage,
+                verificationStatus: user.verificationStatus,
                 verificationNotes: user.verificationNotes,
             },
         });

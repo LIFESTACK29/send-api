@@ -74,7 +74,6 @@ const UserSchema = new mongoose_1.Schema({
         coordinates: {
             type: [Number],
         },
-        default: undefined,
     },
     addresses: { type: [AddressSchema], default: [] },
     pushToken: { type: String },
@@ -83,6 +82,25 @@ const UserSchema = new mongoose_1.Schema({
         type: String,
         enum: ["incomplete", "pending_verification", "active", "rejected"],
         default: "incomplete",
+    },
+    onboardingStage: {
+        type: String,
+        enum: [
+            "email_pending",
+            "profile_pending",
+            "vehicle_pending",
+            "documents_pending",
+            "review_pending",
+            "pending_admin_approval",
+            "approved",
+            "rejected",
+        ],
+        default: "email_pending",
+    },
+    verificationStatus: {
+        type: String,
+        enum: ["not_submitted", "pending", "approved", "rejected"],
+        default: "not_submitted",
     },
     profileImageUrl: { type: String },
     verificationNotes: { type: String },

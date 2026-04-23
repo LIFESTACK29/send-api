@@ -9,12 +9,20 @@ const REQUIRED_DOCUMENT_TYPES = [
     "REGISTRATION",
 ] as const;
 
+export type OnboardingStage =
+    | "email_pending"
+    | "profile_pending"
+    | "vehicle_pending"
+    | "documents_pending"
+    | "review_pending"
+    | "pending_admin_approval"
+    | "approved"
+    | "rejected";
+
 type OnboardingNextStep =
     | "email_otp"
     | "profile_image"
-    | "vehicle_type"
     | "vehicle_details"
-    | "vehicle_image"
     | "documents"
     | "submit_verification"
     | "pending_admin_approval"
@@ -26,13 +34,15 @@ type AccessStatus =
     | "pending_admin_approval"
     | "approved";
 
-export interface RiderOnboardingState {
+export interface UserAccessState {
+    onboardingStage: OnboardingStage;
+    verificationStatus: IUser["verificationStatus"];
     onboardingRequired: boolean;
     canAccessHome: boolean;
     accessStatus: AccessStatus;
     nextStep: OnboardingNextStep;
-    riderStatus: IUser["riderStatus"];
-    onboardingProgress: {
+    riderStatus?: IUser["riderStatus"];
+    onboardingProgress?: {
         emailVerified: boolean;
         profileCompleted: boolean;
         vehicleSelected: boolean;
@@ -41,172 +51,116 @@ export interface RiderOnboardingState {
         documentsUploaded: boolean;
         submittedForVerification: boolean;
     };
-    completionPercentage: number;
-}
-
-export interface UserAccessState {
-    onboardingRequired: boolean;
-    canAccessHome: boolean;
-    accessStatus: AccessStatus | "approved";
-    nextStep: OnboardingNextStep | "home";
-    riderStatus?: IUser["riderStatus"];
-    onboardingProgress?: RiderOnboardingState["onboardingProgress"];
     completionPercentage?: number;
 }
+
+const stageToNextStep = (stage: OnboardingStage): OnboardingNextStep => {
+    switch (stage) {
+        case "email_pending":
+            return "email_otp";
+        case "profile_pending":
+            return "profile_image";
+        case "vehicle_pending":
+            return "vehicle_details";
+        case "documents_pending":
+            return "documents";
+        case "review_pending":
+            return "submit_verification";
+        case "pending_admin_approval":
+            return "pending_admin_approval";
+        case "approved":
+            return "home";
+        case "rejected":
+            return "documents";
+        default:
+            return "profile_image";
+    }
+};
+
+const stageToAccessStatus = (stage: OnboardingStage): AccessStatus => {
+    if (stage === "approved") return "approved";
+    if (stage === "email_pending") return "email_verification_required";
+    if (stage === "pending_admin_approval") return "pending_admin_approval";
+    return "onboarding_incomplete";
+};
+
+const mapVerificationStatus = (riderStatus?: IUser["riderStatus"]) => {
+    if (riderStatus === "active") return "approved" as const;
+    if (riderStatus === "pending_verification") return "pending" as const;
+    if (riderStatus === "rejected") return "rejected" as const;
+    return "not_submitted" as const;
+};
 
 const toPercentage = (steps: boolean[]): number => {
     const completed = steps.filter(Boolean).length;
     return Math.round((completed / steps.length) * 100);
 };
 
-const buildRiderOnboardingStateFromData = (params: {
-    isOnboarded: boolean;
-    riderStatus: IUser["riderStatus"];
-    hasProfileImage: boolean;
+const getRequiredFieldsForVehicleType = (vehicleType: string): string[] => {
+    switch (vehicleType) {
+        case "BICYCLE":
+            return ["color"];
+        case "MOTORCYCLE":
+            return ["color", "licensePlate"];
+        case "TRICYCLE":
+            return ["color", "licensePlate"];
+        case "CAR":
+            return ["brand", "model", "year", "color", "licensePlate"];
+        default:
+            return ["color"];
+    }
+};
+
+const isVehicleDetailsComplete = (vehicle: any): boolean => {
+    const requiredFields = getRequiredFieldsForVehicleType(vehicle.vehicleType);
+    return requiredFields.every((field) => Boolean(vehicle[field]));
+};
+
+const inferRiderStage = (params: {
+    user: IUser;
     hasVehicle: boolean;
     hasCompleteVehicleDetails: boolean;
     hasVehicleImage: boolean;
     hasAllRequiredDocuments: boolean;
-}): RiderOnboardingState => {
+}): OnboardingStage => {
     const {
-        isOnboarded,
-        riderStatus,
-        hasProfileImage,
+        user,
         hasVehicle,
         hasCompleteVehicleDetails,
         hasVehicleImage,
         hasAllRequiredDocuments,
     } = params;
 
-    const submittedForVerification =
-        riderStatus === "pending_verification" || riderStatus === "active";
-
-    const onboardingProgress = {
-        emailVerified: isOnboarded,
-        profileCompleted: hasProfileImage,
-        vehicleSelected: hasVehicle,
-        vehicleDetailsCompleted: hasCompleteVehicleDetails,
-        vehicleImageUploaded: hasVehicleImage,
-        documentsUploaded: hasAllRequiredDocuments,
-        submittedForVerification,
-    };
-
-    if (!isOnboarded) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "email_verification_required",
-            nextStep: "email_otp",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-
-    if (riderStatus === "active") {
-        return {
-            onboardingRequired: false,
-            canAccessHome: true,
-            accessStatus: "approved",
-            nextStep: "home",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: 100,
-        };
-    }
-
-    if (riderStatus === "pending_verification") {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "pending_admin_approval",
-            nextStep: "pending_admin_approval",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: 100,
-        };
-    }
-
-    if (!hasProfileImage) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "onboarding_incomplete",
-            nextStep: "profile_image",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-
-    if (!hasVehicle) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "onboarding_incomplete",
-            nextStep: "vehicle_type",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-
-    if (!hasCompleteVehicleDetails) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "onboarding_incomplete",
-            nextStep: "vehicle_details",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-
-    if (!hasVehicleImage) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "onboarding_incomplete",
-            nextStep: "vehicle_image",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-
-    if (!hasAllRequiredDocuments) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "onboarding_incomplete",
-            nextStep: "documents",
-            riderStatus,
-            onboardingProgress,
-            completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-
-    return {
-        onboardingRequired: true,
-        canAccessHome: false,
-        accessStatus: "onboarding_incomplete",
-        nextStep: "submit_verification",
-        riderStatus,
-        onboardingProgress,
-        completionPercentage: toPercentage(Object.values(onboardingProgress)),
-    };
+    if (!user.isOnboarded) return "email_pending";
+    if (user.riderStatus === "active") return "approved";
+    if (user.riderStatus === "pending_verification")
+        return "pending_admin_approval";
+    if (user.riderStatus === "rejected") return "rejected";
+    if (!user.profileImageUrl) return "profile_pending";
+    if (!hasVehicle || !hasCompleteVehicleDetails || !hasVehicleImage)
+        return "vehicle_pending";
+    if (!hasAllRequiredDocuments) return "documents_pending";
+    return "review_pending";
 };
 
-export const getRiderOnboardingState = async (
+export const syncUserOnboardingState = async (
     userId: string,
-): Promise<RiderOnboardingState> => {
-    const user = await User.findById(userId).select(
-        "isOnboarded role riderStatus profileImageUrl",
-    );
+): Promise<IUser | null> => {
+    const user = await User.findById(userId);
+    if (!user) return null;
 
-    if (!user || user.role !== "rider") {
-        throw new Error("Rider not found");
+    if (!user.isOnboarded) {
+        user.onboardingStage = "email_pending";
+        user.verificationStatus = "not_submitted";
+        await user.save();
+        return user;
+    }
+
+    if (user.role !== "rider") {
+        user.onboardingStage = "approved";
+        user.verificationStatus = "approved";
+        await user.save();
+        return user;
     }
 
     const [vehicles, documents] = await Promise.all([
@@ -217,11 +171,7 @@ export const getRiderOnboardingState = async (
     const hasVehicle = vehicles.length > 0;
     const hasCompleteVehicleDetails =
         hasVehicle &&
-        vehicles.every((v) =>
-            Boolean(
-                v.brand && v.get("model") && v.year && v.color && v.licensePlate,
-            ),
-        );
+        vehicles.every((v) => isVehicleDetailsComplete(v));
     const hasVehicleImage = hasVehicle && vehicles.every((v) => Boolean(v.imageUrl));
 
     const uploadedDocumentTypes = new Set(documents.map((d) => d.documentType));
@@ -229,30 +179,45 @@ export const getRiderOnboardingState = async (
         uploadedDocumentTypes.has(docType),
     );
 
-    return buildRiderOnboardingStateFromData({
-        isOnboarded: user.isOnboarded,
-        riderStatus: user.riderStatus,
-        hasProfileImage: Boolean(user.profileImageUrl),
+    user.onboardingStage = inferRiderStage({
+        user,
         hasVehicle,
         hasCompleteVehicleDetails,
         hasVehicleImage,
         hasAllRequiredDocuments,
     });
+    user.verificationStatus = mapVerificationStatus(user.riderStatus);
+
+    await user.save();
+    return user;
 };
 
 export const getUserAccessState = async (user: IUser): Promise<UserAccessState> => {
-    if (!user.isOnboarded) {
-        return {
-            onboardingRequired: true,
-            canAccessHome: false,
-            accessStatus: "email_verification_required",
-            nextStep: "email_otp",
-            riderStatus: user.riderStatus,
-        };
+    const hydratedUser =
+        user.onboardingStage && user.verificationStatus
+            ? user
+            : await syncUserOnboardingState(user._id.toString());
+
+    if (!hydratedUser) {
+        throw new Error("User not found");
     }
 
-    if (user.role !== "rider") {
+    if (hydratedUser.role !== "rider") {
+        if (!hydratedUser.isOnboarded) {
+            return {
+                onboardingStage: "email_pending",
+                verificationStatus:
+                    hydratedUser.verificationStatus || "not_submitted",
+                onboardingRequired: true,
+                canAccessHome: false,
+                accessStatus: "email_verification_required",
+                nextStep: "email_otp",
+            };
+        }
+
         return {
+            onboardingStage: hydratedUser.onboardingStage || "approved",
+            verificationStatus: hydratedUser.verificationStatus || "approved",
             onboardingRequired: false,
             canAccessHome: true,
             accessStatus: "approved",
@@ -260,5 +225,59 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
         };
     }
 
-    return getRiderOnboardingState(user._id.toString());
+    const [vehicles, documents] = await Promise.all([
+        Vehicle.find({ userId: hydratedUser._id }),
+        Document.find({ userId: hydratedUser._id }).select("documentType"),
+    ]);
+
+    const hasVehicle = vehicles.length > 0;
+    const hasCompleteVehicleDetails =
+        hasVehicle &&
+        vehicles.every((v) => isVehicleDetailsComplete(v));
+    const hasVehicleImage = hasVehicle && vehicles.every((v) => Boolean(v.imageUrl));
+
+    const uploadedDocumentTypes = new Set(documents.map((d) => d.documentType));
+    const hasAllRequiredDocuments = REQUIRED_DOCUMENT_TYPES.every((docType) =>
+        uploadedDocumentTypes.has(docType),
+    );
+
+    const submittedForVerification =
+        hydratedUser.riderStatus === "pending_verification" ||
+        hydratedUser.riderStatus === "active";
+
+    const onboardingProgress = {
+        emailVerified: hydratedUser.isOnboarded,
+        profileCompleted: Boolean(hydratedUser.profileImageUrl),
+        vehicleSelected: hasVehicle,
+        vehicleDetailsCompleted: hasCompleteVehicleDetails,
+        vehicleImageUploaded: hasVehicleImage,
+        documentsUploaded: hasAllRequiredDocuments,
+        submittedForVerification,
+    };
+
+    const stage = hydratedUser.onboardingStage || "profile_pending";
+
+    return {
+        onboardingStage: stage,
+        verificationStatus: hydratedUser.verificationStatus || "not_submitted",
+        onboardingRequired: stage !== "approved",
+        canAccessHome: stage === "approved",
+        accessStatus: stageToAccessStatus(stage),
+        nextStep: stageToNextStep(stage),
+        riderStatus: hydratedUser.riderStatus,
+        onboardingProgress,
+        completionPercentage:
+            stage === "pending_admin_approval" || stage === "approved"
+                ? 100
+                : toPercentage(Object.values(onboardingProgress)),
+    };
+};
+
+export const getRiderOnboardingState = async (userId: string) => {
+    const user = await syncUserOnboardingState(userId);
+    if (!user || user.role !== "rider") {
+        throw new Error("Rider not found");
+    }
+
+    return getUserAccessState(user);
 };
