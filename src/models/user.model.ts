@@ -56,11 +56,11 @@ const UserSchema: Schema = new Schema(
             type: {
                 type: String,
                 enum: ["Point"],
-                default: "Point",
             },
             coordinates: {
                 type: [Number],
             },
+            default: undefined,
         },
         addresses: { type: [AddressSchema], default: [] },
         pushToken: { type: String },
@@ -76,7 +76,15 @@ const UserSchema: Schema = new Schema(
     { timestamps: true },
 );
 
-UserSchema.index({ currentLocation: "2dsphere" });
+UserSchema.index(
+    { currentLocation: "2dsphere" },
+    {
+        partialFilterExpression: {
+            "currentLocation.type": "Point",
+            "currentLocation.coordinates.1": { $exists: true },
+        },
+    },
+);
 
 // Hash password before saving
 UserSchema.pre("save", async function (next) {
