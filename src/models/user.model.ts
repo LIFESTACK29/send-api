@@ -60,7 +60,6 @@ const UserSchema: Schema = new Schema(
             coordinates: {
                 type: [Number],
             },
-            default: undefined,
         },
         addresses: { type: [AddressSchema], default: [] },
         pushToken: { type: String },
