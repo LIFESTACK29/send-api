@@ -12,85 +12,45 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRiderOnboardingState = exports.getUserAccessState = exports.syncUserOnboardingState = exports.getSettingsDocumentCompliance = void 0;
+exports.getRiderOnboardingState = exports.getUserAccessState = exports.syncUserOnboardingState = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
-const document_model_1 = __importDefault(require("../models/document.model"));
-const REQUIRED_DOCUMENT_TYPES = [
-    "DRIVING_LICENSE",
-    "GOVERNMENT_ID",
-    "INSURANCE",
-    "REGISTRATION",
-];
-const getRequiredFieldsForVehicleType = (vehicleType) => {
-    switch (vehicleType) {
-        case "BICYCLE":
-            return ["color"];
-        case "MOTORCYCLE":
-            return ["color", "licensePlate"];
-        case "TRICYCLE":
-            return ["color", "licensePlate"];
-        case "CAR":
-            return ["brand", "model", "year", "color", "licensePlate"];
-        default:
-            return ["color"];
-    }
-};
-const isVehicleDetailsComplete = (vehicle) => {
-    const requiredFields = getRequiredFieldsForVehicleType(vehicle.vehicleType);
-    return requiredFields.every((field) => Boolean(vehicle[field]));
-};
 const toPercentage = (steps) => {
     const completed = steps.filter(Boolean).length;
     return Math.round((completed / steps.length) * 100);
 };
-const resolveVehicleStep = (params) => {
-    const { hasVehicle, hasCompleteVehicleDetails, hasVehicleImage } = params;
-    if (!hasVehicle)
-        return "vehicle_selection";
-    if (!hasCompleteVehicleDetails)
-        return "vehicle_details";
-    if (!hasVehicleImage)
-        return "vehicle_image";
-    return "submit_verification";
+const normalizeOnboardingStage = (stage) => {
+    if (!stage)
+        return "profile_pending";
+    if (stage === "email_pending" ||
+        stage === "profile_pending" ||
+        stage === "vehicle_pending" ||
+        stage === "approved" ||
+        stage === "rejected") {
+        return stage;
+    }
+    // Legacy stages now map to simplified onboarding.
+    return "vehicle_pending";
 };
 const mapVerificationStatus = (riderStatus, existingStatus) => {
     if (riderStatus === "active")
         return "approved";
-    if (riderStatus === "pending_verification")
-        return "pending";
     if (riderStatus === "rejected")
         return "rejected";
-    if (existingStatus === "approved")
-        return "approved";
     return "not_submitted";
 };
 const inferRiderStage = (params) => {
-    const { user, hasVehicle, hasCompleteVehicleDetails, hasVehicleImage } = params;
+    const { user, hasVehicle } = params;
     if (!user.isOnboarded)
         return "email_pending";
-    if (user.riderStatus === "active")
-        return "approved";
-    if (user.riderStatus === "pending_verification")
-        return "pending_admin_approval";
     if (user.riderStatus === "rejected")
         return "rejected";
     if (!user.profileImageUrl)
         return "profile_pending";
-    if (!hasVehicle || !hasCompleteVehicleDetails || !hasVehicleImage)
+    if (!hasVehicle)
         return "vehicle_pending";
-    return "review_pending";
+    return "approved";
 };
-const getSettingsDocumentCompliance = (userId) => __awaiter(void 0, void 0, void 0, function* () {
-    const documents = yield document_model_1.default.find({ userId }).select("documentType");
-    const uploadedDocumentTypes = new Set(documents.map((d) => d.documentType));
-    const missingDocuments = REQUIRED_DOCUMENT_TYPES.filter((docType) => !uploadedDocumentTypes.has(docType));
-    return {
-        documentsUploaded: missingDocuments.length === 0,
-        missingDocuments,
-    };
-});
-exports.getSettingsDocumentCompliance = getSettingsDocumentCompliance;
 const syncUserOnboardingState = (userId) => __awaiter(void 0, void 0, void 0, function* () {
     const user = yield user_model_1.default.findById(userId);
     if (!user)
@@ -108,33 +68,20 @@ const syncUserOnboardingState = (userId) => __awaiter(void 0, void 0, void 0, fu
         yield user.save();
         return user;
     }
-    const [vehicles, docsCompliance] = yield Promise.all([
-        vehicle_model_1.default.find({ userId }),
-        (0, exports.getSettingsDocumentCompliance)(userId),
-    ]);
+    const vehicles = yield vehicle_model_1.default.find({ userId });
     const hasVehicle = vehicles.length > 0;
-    const hasCompleteVehicleDetails = hasVehicle && vehicles.every((v) => isVehicleDetailsComplete(v));
-    const hasVehicleImage = hasVehicle && vehicles.every((v) => Boolean(v.imageUrl));
-    if (user.riderStatus === "incomplete") {
-        user.riderStatus = "inactive";
-    }
-    if (user.riderStatus === "active" && !docsCompliance.documentsUploaded) {
-        user.riderStatus = "inactive";
-    }
-    if (user.riderStatus === "inactive" &&
-        user.verificationStatus === "approved" &&
-        docsCompliance.documentsUploaded &&
-        user.isOnboarded) {
-        user.riderStatus = "active";
-    }
+    const isComplete = Boolean(user.profileImageUrl) && hasVehicle;
     const inferredStage = inferRiderStage({
         user,
         hasVehicle,
-        hasCompleteVehicleDetails,
-        hasVehicleImage,
     });
-    user.onboardingStage =
-        inferredStage === "documents_pending" ? "review_pending" : inferredStage;
+    if (isComplete && user.riderStatus !== "rejected") {
+        user.riderStatus = "active";
+    }
+    else if (user.riderStatus !== "rejected") {
+        user.riderStatus = "inactive";
+    }
+    user.onboardingStage = inferredStage;
     user.verificationStatus = mapVerificationStatus(user.riderStatus, user.verificationStatus);
     yield user.save();
     return user;
@@ -160,7 +107,7 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
             };
         }
         return {
-            onboardingStage: hydratedUser.onboardingStage || "approved",
+            onboardingStage: "approved",
             verificationStatus: hydratedUser.verificationStatus || "approved",
             onboardingRequired: false,
             canAccessHome: true,
@@ -169,42 +116,21 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
             currentStep: "home",
         };
     }
-    const [vehicles, docsCompliance] = yield Promise.all([
-        vehicle_model_1.default.find({ userId: hydratedUser._id }),
-        (0, exports.getSettingsDocumentCompliance)(hydratedUser._id.toString()),
-    ]);
+    const vehicles = yield vehicle_model_1.default.find({ userId: hydratedUser._id });
     const hasVehicle = vehicles.length > 0;
-    const hasCompleteVehicleDetails = hasVehicle && vehicles.every((v) => isVehicleDetailsComplete(v));
-    const hasVehicleImage = hasVehicle && vehicles.every((v) => Boolean(v.imageUrl));
-    const submittedForVerification = hydratedUser.riderStatus === "pending_verification" ||
-        hydratedUser.riderStatus === "active";
     const onboardingProgress = {
         emailVerified: hydratedUser.isOnboarded,
         profileCompleted: Boolean(hydratedUser.profileImageUrl),
         vehicleSelected: hasVehicle,
-        vehicleDetailsCompleted: hasCompleteVehicleDetails,
-        vehicleImageUploaded: hasVehicleImage,
-        submittedForVerification,
     };
-    const stage = hydratedUser.onboardingStage === "documents_pending"
-        ? "review_pending"
-        : hydratedUser.onboardingStage || "profile_pending";
-    const onboardingComplete = stage === "approved" ||
-        stage === "pending_admin_approval" ||
-        stage === "rejected";
+    const stage = normalizeOnboardingStage(hydratedUser.onboardingStage);
+    const onboardingComplete = stage === "approved" || stage === "rejected";
     if (!onboardingComplete) {
-        const vehicleStep = resolveVehicleStep({
-            hasVehicle,
-            hasCompleteVehicleDetails,
-            hasVehicleImage,
-        });
         const currentStep = stage === "email_pending"
             ? "email_otp"
             : stage === "profile_pending"
                 ? "profile_image"
-                : stage === "vehicle_pending"
-                    ? vehicleStep
-                    : "submit_verification";
+                : "vehicle_selection";
         return {
             onboardingStage: stage,
             verificationStatus: hydratedUser.verificationStatus || "not_submitted",
@@ -217,44 +143,11 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
                 ? "email_otp"
                 : stage === "profile_pending"
                     ? "profile_image"
-                    : stage === "vehicle_pending"
-                        ? vehicleStep
-                        : "submit_verification",
+                    : "vehicle_selection",
             currentStep,
             riderStatus: hydratedUser.riderStatus,
             onboardingProgress,
-            settingsChecks: docsCompliance,
             completionPercentage: toPercentage(Object.values(onboardingProgress)),
-        };
-    }
-    if (stage === "pending_admin_approval") {
-        return {
-            onboardingStage: stage,
-            verificationStatus: hydratedUser.verificationStatus || "pending",
-            onboardingRequired: false,
-            canAccessHome: false,
-            accessStatus: "pending_admin_approval",
-            nextStep: "pending_admin_approval",
-            currentStep: "pending_admin_approval",
-            riderStatus: hydratedUser.riderStatus,
-            onboardingProgress,
-            settingsChecks: docsCompliance,
-            completionPercentage: 100,
-        };
-    }
-    if (!docsCompliance.documentsUploaded || hydratedUser.riderStatus !== "active") {
-        return {
-            onboardingStage: stage === "approved" ? "approved" : stage,
-            verificationStatus: hydratedUser.verificationStatus || "not_submitted",
-            onboardingRequired: false,
-            canAccessHome: false,
-            accessStatus: "settings_incomplete",
-            nextStep: "settings_documents",
-            currentStep: "settings_documents",
-            riderStatus: hydratedUser.riderStatus,
-            onboardingProgress,
-            settingsChecks: docsCompliance,
-            completionPercentage: 100,
         };
     }
     return {
@@ -267,7 +160,6 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
         currentStep: "home",
         riderStatus: hydratedUser.riderStatus,
         onboardingProgress,
-        settingsChecks: docsCompliance,
         completionPercentage: 100,
     };
 });

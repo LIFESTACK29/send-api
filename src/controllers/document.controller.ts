@@ -6,7 +6,6 @@ import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
 import {
-    getSettingsDocumentCompliance,
     getUserAccessState,
     syncUserOnboardingState,
 } from "../services/onboarding.service";
@@ -315,23 +314,6 @@ export const verifyRider: RequestHandler = CatchAsync(
             return;
         }
 
-        if (status === "active") {
-            const compliance = await getSettingsDocumentCompliance(userId);
-            if (!compliance.documentsUploaded) {
-                res.status(400).json({
-                    success: false,
-                    message:
-                        "Rider cannot be activated until all required documents are uploaded in settings",
-                    data: {
-                        riderStatus: "inactive",
-                        missingDocuments: compliance.missingDocuments,
-                        nextStep: "settings_documents",
-                    },
-                });
-                return;
-            }
-        }
-
         const user = await User.findByIdAndUpdate(
             userId,
             {
@@ -385,19 +367,9 @@ export const getAllRidersForAdmin: RequestHandler = CatchAsync(
             .sort({ updatedAt: -1 });
 
         const riderIds = riders.map((rider) => rider._id);
-        const [documents, vehicles] = await Promise.all([
-            Document.find({ userId: { $in: riderIds } }).select(
-                "userId documentType verificationStatus",
-            ),
-            Vehicle.find({ userId: { $in: riderIds } }).select("userId imageUrl"),
-        ]);
-
-        const docsByUser = new Map<string, any[]>();
-        documents.forEach((doc) => {
-            const key = doc.userId.toString();
-            if (!docsByUser.has(key)) docsByUser.set(key, []);
-            docsByUser.get(key)?.push(doc);
-        });
+        const vehicles = await Vehicle.find({ userId: { $in: riderIds } }).select(
+            "userId imageUrl",
+        );
 
         const vehiclesByUser = new Map<string, any[]>();
         vehicles.forEach((vehicle) => {
@@ -409,26 +381,8 @@ export const getAllRidersForAdmin: RequestHandler = CatchAsync(
         const formatted = await Promise.all(
             riders.map(async (rider) => {
                 const userId = rider._id.toString();
-                const riderDocs = docsByUser.get(userId) || [];
                 const riderVehicles = vehiclesByUser.get(userId) || [];
-                const documentCompliance =
-                    await getSettingsDocumentCompliance(userId);
                 const accessState = await getUserAccessState(rider as any);
-
-                const docSummary = {
-                    totalDocuments: riderDocs.length,
-                    approved: riderDocs.filter(
-                        (d) => d.verificationStatus === "approved",
-                    ).length,
-                    pending: riderDocs.filter(
-                        (d) => d.verificationStatus === "pending",
-                    ).length,
-                    rejected: riderDocs.filter(
-                        (d) => d.verificationStatus === "rejected",
-                    ).length,
-                    documentsUploaded: documentCompliance.documentsUploaded,
-                    missingDocuments: documentCompliance.missingDocuments,
-                };
 
                 return {
                     id: rider._id,
@@ -443,7 +397,6 @@ export const getAllRidersForAdmin: RequestHandler = CatchAsync(
                     hasProfileImage: Boolean(rider.profileImageUrl),
                     hasVehicle: riderVehicles.length > 0,
                     hasVehicleImage: riderVehicles.some((v) => Boolean(v.imageUrl)),
-                    documents: docSummary,
                     accessState,
                     createdAt: rider.createdAt,
                     updatedAt: rider.updatedAt,
@@ -482,17 +435,12 @@ export const getRiderVerificationDetail: RequestHandler = CatchAsync(
             return;
         }
 
-        const [documents, vehicles, accessState, documentCompliance] =
-            await Promise.all([
-                Document.find({ userId }).select(
-                    "documentType documentNumber documentUrl verificationStatus rejectionReason uploadedAt updatedAt expiryDate",
-                ),
-                Vehicle.find({ userId }).select(
-                    "vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt",
-                ),
-                getUserAccessState(rider as any),
-                getSettingsDocumentCompliance(userId),
-            ]);
+        const [vehicles, accessState] = await Promise.all([
+            Vehicle.find({ userId }).select(
+                "vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt",
+            ),
+            getUserAccessState(rider as any),
+        ]);
 
         res.status(200).json({
             success: true,
@@ -513,8 +461,6 @@ export const getRiderVerificationDetail: RequestHandler = CatchAsync(
                     updatedAt: rider.updatedAt,
                 },
                 vehicles,
-                documents,
-                settingsChecks: documentCompliance,
             },
         });
     },

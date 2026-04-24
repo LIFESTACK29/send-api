@@ -8,7 +8,6 @@ import userRoute from "./routes/user.route";
 import deliveryRoute from "./routes/delivery.route";
 import walletRoute from "./routes/wallet.route";
 import vehicleRoute from "./routes/vehicle.route";
-import documentRoute from "./routes/document.route";
 import onboardingRoute from "./routes/onboarding.route";
 import adminRoute from "./routes/admin.route";
 import errorMiddleware from "./middlewares/error.middleware";
@@ -36,7 +35,6 @@ app.use("/api/v1/wallet", walletRoute);
 app.use("/api/v1/onboarding", onboardingRoute);
 app.use("/api/v1/admin", adminRoute);
 app.use("/api/v1/riders", vehicleRoute);
-app.use("/api/v1/riders", documentRoute);
 
 // Error handler
 app.use(errorMiddleware);

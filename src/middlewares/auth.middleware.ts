@@ -92,7 +92,7 @@ export const authorizeSelfOrAdmin = (paramName = "userId") => {
 };
 
 /**
- * Blocks rider-only "home" APIs until rider is fully approved by admin.
+ * Blocks rider-only "home" APIs until rider onboarding is complete.
  * Customers/admin users are unaffected.
  */
 export const requireActiveRiderAccess = async (
@@ -124,11 +124,9 @@ export const requireActiveRiderAccess = async (
             res.status(403).json({
                 code: "RIDER_HOME_LOCKED",
                 message:
-                    accessState.nextStep === "pending_admin_approval"
-                        ? "Verification is pending admin approval"
-                        : accessState.nextStep === "email_otp"
-                          ? "Email verification required"
-                          : "Complete rider onboarding to continue",
+                    accessState.nextStep === "email_otp"
+                        ? "Email verification required"
+                        : "Complete rider onboarding to continue",
                 canAccessHome: accessState.canAccessHome,
                 riderStatus: accessState.riderStatus,
                 onboardingStage: accessState.onboardingStage,

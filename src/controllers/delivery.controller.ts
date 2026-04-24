@@ -19,7 +19,12 @@ const PER_KM_FEE_NAIRA = 200;
 const MATCH_RADIUS_METERS = 5000;
 const MATCH_TIMEOUT_SECONDS = 60;
 
-const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+const getDistance = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
@@ -72,14 +77,19 @@ const parseLocation = (rawLocation: any) => {
     };
 };
 
-const parseContactDetails = (rawDetails: any, label: "Customer" | "Receiver") => {
+const parseContactDetails = (
+    rawDetails: any,
+    label: "Customer" | "Receiver",
+) => {
     let details = rawDetails;
 
     if (typeof details === "string") {
         try {
             details = JSON.parse(details);
         } catch {
-            return { error: `${label} details payload format is invalid` as const };
+            return {
+                error: `${label} details payload format is invalid` as const,
+            };
         }
     }
 
@@ -106,7 +116,10 @@ const parseContactDetails = (rawDetails: any, label: "Customer" | "Receiver") =>
     };
 };
 
-const createMobileDeliveryResponse = (delivery: any, nearbyRidersCount: number) => ({
+const createMobileDeliveryResponse = (
+    delivery: any,
+    nearbyRidersCount: number,
+) => ({
     id: delivery._id,
     trackingId: delivery.trackingId,
     status: delivery.status,
@@ -129,7 +142,8 @@ const createMobileDeliveryResponse = (delivery: any, nearbyRidersCount: number) 
         imageUrl: delivery.itemImage || null,
     },
     matching: {
-        strategy: nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
+        strategy:
+            nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
         nearbyRidersCount,
         radiusMeters: MATCH_RADIUS_METERS,
         timeoutSeconds: MATCH_TIMEOUT_SECONDS,
@@ -137,7 +151,10 @@ const createMobileDeliveryResponse = (delivery: any, nearbyRidersCount: number) 
     createdAt: delivery.createdAt,
 });
 
-const createMatchRequestResponse = (matchRequest: any, nearbyRidersCount: number) => ({
+const createMatchRequestResponse = (
+    matchRequest: any,
+    nearbyRidersCount: number,
+) => ({
     id: matchRequest._id,
     status: matchRequest.status,
     pricing: {
@@ -159,7 +176,8 @@ const createMatchRequestResponse = (matchRequest: any, nearbyRidersCount: number
         imageUrl: matchRequest.itemImage || null,
     },
     matching: {
-        strategy: nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
+        strategy:
+            nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
         nearbyRidersCount,
         radiusMeters: matchRequest.searchRadiusMeters || MATCH_RADIUS_METERS,
         timeoutSeconds: matchRequest.timeoutSeconds || MATCH_TIMEOUT_SECONDS,
@@ -197,7 +215,11 @@ const buildRiderPreview = async (riderId: string) => {
     };
 };
 
-const findNearbyActiveRiders = async (lat: number, lng: number, radius = MATCH_RADIUS_METERS) =>
+const findNearbyActiveRiders = async (
+    lat: number,
+    lng: number,
+    radius = MATCH_RADIUS_METERS,
+) =>
     User.find({
         role: "rider",
         isOnline: true,
@@ -228,7 +250,10 @@ export const calculateDeliveryFee = async (
         if ("error" in pickupParsed || "error" in dropoffParsed) {
             res.status(400).json({
                 success: false,
-                message: "error" in pickupParsed ? pickupParsed.error : dropoffParsed.error,
+                message:
+                    "error" in pickupParsed
+                        ? pickupParsed.error
+                        : dropoffParsed.error,
             });
             return;
         }
@@ -298,7 +323,10 @@ export const requestDelivery = async (
         if ("error" in pickupParsed || "error" in dropoffParsed) {
             res.status(400).json({
                 success: false,
-                message: "error" in pickupParsed ? pickupParsed.error : dropoffParsed.error,
+                message:
+                    "error" in pickupParsed
+                        ? pickupParsed.error
+                        : dropoffParsed.error,
             });
             return;
         }
@@ -307,7 +335,10 @@ export const requestDelivery = async (
         dropoffLocation = dropoffParsed.value;
 
         if (!packageType) {
-            res.status(400).json({ success: false, message: "Package type is required" });
+            res.status(400).json({
+                success: false,
+                message: "Package type is required",
+            });
             return;
         }
 
@@ -320,7 +351,10 @@ export const requestDelivery = async (
             "Customer",
         );
         if ("error" in customerParsed) {
-            res.status(400).json({ success: false, message: customerParsed.error });
+            res.status(400).json({
+                success: false,
+                message: customerParsed.error,
+            });
             return;
         }
 
@@ -333,14 +367,18 @@ export const requestDelivery = async (
             "Receiver",
         );
         if ("error" in receiverParsed) {
-            res.status(400).json({ success: false, message: receiverParsed.error });
+            res.status(400).json({
+                success: false,
+                message: receiverParsed.error,
+            });
             return;
         }
 
         if (!req.file) {
             res.status(400).json({
                 success: false,
-                message: "Package image is required. Please upload what you are sending.",
+                message:
+                    "Package image is required. Please upload what you are sending.",
                 code: "ITEM_IMAGE_REQUIRED",
             });
             return;
@@ -353,7 +391,9 @@ export const requestDelivery = async (
             dropoffLocation.lng,
         );
 
-        const calculatedFee = Math.ceil(BASE_FEE_NAIRA + distance * PER_KM_FEE_NAIRA);
+        const calculatedFee = Math.ceil(
+            BASE_FEE_NAIRA + distance * PER_KM_FEE_NAIRA,
+        );
         const itemImage = await uploadToStorage(req.file, "deliveries");
 
         const matchRequest = await DeliveryMatchRequest.create({
@@ -378,10 +418,17 @@ export const requestDelivery = async (
             MATCH_RADIUS_METERS,
         );
 
-        const riderPayload = createMatchRequestResponse(matchRequest, nearbyRiders.length);
+        const riderPayload = createMatchRequestResponse(
+            matchRequest,
+            nearbyRiders.length,
+        );
         if (nearbyRiders.length > 0) {
             nearbyRiders.forEach((rider) => {
-                emitToRoom(`user-${rider._id}`, "incoming_match_request", riderPayload);
+                emitToRoom(
+                    `user-${rider._id}`,
+                    "incoming_match_request",
+                    riderPayload,
+                );
             });
         } else {
             emitToRiders("incoming_match_request", riderPayload);
@@ -392,7 +439,8 @@ export const requestDelivery = async (
 
         res.status(201).json({
             success: true,
-            message: "Rider search started. Delivery will be created after rider acceptance or manual fallback.",
+            message:
+                "Rider search started. Delivery will be created after rider acceptance or manual fallback.",
             matchRequest: riderPayload,
             nextAction: {
                 state: "searching_for_rider",
@@ -433,7 +481,10 @@ export const waitMoreForRider = async (
         });
 
         if (!matchRequest) {
-            res.status(404).json({ success: false, message: "Match request not found" });
+            res.status(404).json({
+                success: false,
+                message: "Match request not found",
+            });
             return;
         }
 
@@ -454,10 +505,17 @@ export const waitMoreForRider = async (
             matchRequest.searchRadiusMeters || MATCH_RADIUS_METERS,
         );
 
-        const riderPayload = createMatchRequestResponse(matchRequest, nearbyRiders.length);
+        const riderPayload = createMatchRequestResponse(
+            matchRequest,
+            nearbyRiders.length,
+        );
         if (nearbyRiders.length > 0) {
             nearbyRiders.forEach((rider) => {
-                emitToRoom(`user-${rider._id}`, "incoming_match_request", riderPayload);
+                emitToRoom(
+                    `user-${rider._id}`,
+                    "incoming_match_request",
+                    riderPayload,
+                );
             });
         } else {
             emitToRiders("incoming_match_request", riderPayload);
@@ -489,15 +547,23 @@ export const createDeliveryManually = async (
         }
 
         const { id } = req.params;
-        const matchRequest = await DeliveryMatchRequest.findOne({ _id: id, customerId });
+        const matchRequest = await DeliveryMatchRequest.findOne({
+            _id: id,
+            customerId,
+        });
 
         if (!matchRequest) {
-            res.status(404).json({ success: false, message: "Match request not found" });
+            res.status(404).json({
+                success: false,
+                message: "Match request not found",
+            });
             return;
         }
 
         if (matchRequest.createdDeliveryId) {
-            const existingDelivery = await Delivery.findById(matchRequest.createdDeliveryId);
+            const existingDelivery = await Delivery.findById(
+                matchRequest.createdDeliveryId,
+            );
             if (existingDelivery) {
                 res.status(200).json({
                     success: true,
@@ -511,7 +577,8 @@ export const createDeliveryManually = async (
         if (["RIDER_ASSIGNED", "CANCELLED"].includes(matchRequest.status)) {
             res.status(400).json({
                 success: false,
-                message: "This match request cannot be converted to manual delivery",
+                message:
+                    "This match request cannot be converted to manual delivery",
             });
             return;
         }
@@ -552,7 +619,10 @@ export const createDeliveryManually = async (
         res.status(201).json({
             success: true,
             message: "Manual delivery created and queued for assignment checks",
-            delivery: createMobileDeliveryResponse(delivery, nearbyRiders.length),
+            delivery: createMobileDeliveryResponse(
+                delivery,
+                nearbyRiders.length,
+            ),
             assignment: {
                 mode: "worker_or_admin",
                 state: "pending_assignment",
@@ -642,22 +712,34 @@ export const acceptDelivery = async (
 
         const matchRequest = await DeliveryMatchRequest.findById(id);
         if (matchRequest) {
-            if (!["SEARCHING", "NO_RIDER_FOUND"].includes(matchRequest.status)) {
-                res.status(400).json({ message: "Match request is no longer available" });
+            if (
+                !["SEARCHING", "NO_RIDER_FOUND"].includes(matchRequest.status)
+            ) {
+                res.status(400).json({
+                    message: "Match request is no longer available",
+                });
                 return;
             }
 
-            if (matchRequest.matchedRiderId && String(matchRequest.matchedRiderId) !== String(riderId)) {
-                res.status(409).json({ message: "Another rider already accepted this request" });
+            if (
+                matchRequest.matchedRiderId &&
+                String(matchRequest.matchedRiderId) !== String(riderId)
+            ) {
+                res.status(409).json({
+                    message: "Another rider already accepted this request",
+                });
                 return;
             }
 
             if (matchRequest.createdDeliveryId) {
-                const existingDelivery = await Delivery.findById(matchRequest.createdDeliveryId);
+                const existingDelivery = await Delivery.findById(
+                    matchRequest.createdDeliveryId,
+                );
                 if (existingDelivery) {
                     res.status(200).json({
                         success: true,
-                        message: "Delivery already created for this match request",
+                        message:
+                            "Delivery already created for this match request",
                         delivery: existingDelivery,
                     });
                     return;
@@ -692,7 +774,11 @@ export const acceptDelivery = async (
                 matchRequestId: matchRequest._id,
             };
 
-            emitToRoom(`customer-${delivery.customerId}`, "delivery_accepted", payload);
+            emitToRoom(
+                `customer-${delivery.customerId}`,
+                "delivery_accepted",
+                payload,
+            );
 
             res.status(200).json({
                 success: true,
@@ -705,12 +791,16 @@ export const acceptDelivery = async (
 
         const delivery = await Delivery.findById(id);
         if (!delivery) {
-            res.status(404).json({ message: "Delivery or match request not found" });
+            res.status(404).json({
+                message: "Delivery or match request not found",
+            });
             return;
         }
 
         if (delivery.status !== "PENDING") {
-            res.status(400).json({ message: "Delivery is no longer available/pending" });
+            res.status(400).json({
+                message: "Delivery is no longer available/pending",
+            });
             return;
         }
 
@@ -721,7 +811,11 @@ export const acceptDelivery = async (
         const riderDetails = await buildRiderPreview(riderId);
         const payload = { delivery, rider: riderDetails };
 
-        emitToRoom(`customer-${delivery.customerId}`, "delivery_accepted", payload);
+        emitToRoom(
+            `customer-${delivery.customerId}`,
+            "delivery_accepted",
+            payload,
+        );
 
         res.status(200).json({
             success: true,
@@ -741,7 +835,10 @@ export const assignRiderToDeliveryByAdmin = async (
 ): Promise<void> => {
     try {
         if (req.user?.role !== "admin") {
-            res.status(403).json({ success: false, message: "Forbidden - admin only" });
+            res.status(403).json({
+                success: false,
+                message: "Forbidden - admin only",
+            });
             return;
         }
 
@@ -749,19 +846,28 @@ export const assignRiderToDeliveryByAdmin = async (
         const { riderId } = req.body;
 
         if (!riderId) {
-            res.status(400).json({ success: false, message: "riderId is required" });
+            res.status(400).json({
+                success: false,
+                message: "riderId is required",
+            });
             return;
         }
 
         const rider = await User.findById(riderId).select("role riderStatus");
         if (!rider || rider.role !== "rider") {
-            res.status(404).json({ success: false, message: "Rider not found" });
+            res.status(404).json({
+                success: false,
+                message: "Rider not found",
+            });
             return;
         }
 
         const delivery = await Delivery.findById(id);
         if (!delivery) {
-            res.status(404).json({ success: false, message: "Delivery not found" });
+            res.status(404).json({
+                success: false,
+                message: "Delivery not found",
+            });
             return;
         }
 
@@ -786,13 +892,17 @@ export const assignRiderToDeliveryByAdmin = async (
         };
 
         emitToRoom(`user-${riderId}`, "assigned_delivery_offer", payload);
-        emitToRoom(`customer-${delivery.customerId}`, "rider_assignment_offer_sent", {
-            deliveryId: delivery._id,
-            riderId,
-            rider: riderDetails,
-            message:
-                "A rider has been notified for your delivery. Assignment happens only after rider acceptance.",
-        });
+        emitToRoom(
+            `customer-${delivery.customerId}`,
+            "rider_assignment_offer_sent",
+            {
+                deliveryId: delivery._id,
+                riderId,
+                rider: riderDetails,
+                message:
+                    "A rider has been notified for your delivery. Assignment happens only after rider acceptance.",
+            },
+        );
 
         res.status(200).json({
             success: true,
@@ -842,7 +952,10 @@ export const cancelDelivery = async (
         delivery.status = "CANCELLED";
         await delivery.save();
 
-        res.status(200).json({ message: "Delivery cancelled successfully", delivery });
+        res.status(200).json({
+            message: "Delivery cancelled successfully",
+            delivery,
+        });
     } catch (error) {
         next(error);
     }
@@ -969,9 +1082,13 @@ export const getDeliveryById = async (
                     ? {
                           id: (delivery.riderId as any)._id,
                           fullName: `${(delivery.riderId as any).firstName} ${(delivery.riderId as any).lastName}`,
-                          profileImageUrl: (delivery.riderId as any).profileImageUrl || null,
-                          riderStatus: (delivery.riderId as any).riderStatus || "incomplete",
-                          phoneNumber: (delivery.riderId as any).phoneNumber || "",
+                          profileImageUrl:
+                              (delivery.riderId as any).profileImageUrl || null,
+                          riderStatus:
+                              (delivery.riderId as any).riderStatus ||
+                              "incomplete",
+                          phoneNumber:
+                              (delivery.riderId as any).phoneNumber || "",
                       }
                     : null,
                 customerId: delivery.customerId,

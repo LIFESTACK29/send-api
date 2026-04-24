@@ -258,21 +258,6 @@ exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(
         });
         return;
     }
-    if (status === "active") {
-        const compliance = yield (0, onboarding_service_1.getSettingsDocumentCompliance)(userId);
-        if (!compliance.documentsUploaded) {
-            res.status(400).json({
-                success: false,
-                message: "Rider cannot be activated until all required documents are uploaded in settings",
-                data: {
-                    riderStatus: "inactive",
-                    missingDocuments: compliance.missingDocuments,
-                    nextStep: "settings_documents",
-                },
-            });
-            return;
-        }
-    }
     const user = yield user_model_1.default.findByIdAndUpdate(userId, {
         riderStatus: status,
         verificationStatus: status === "active"
@@ -312,18 +297,7 @@ exports.getAllRidersForAdmin = (0, catchasync_util_1.CatchAsync)((req, res) => _
         .select("firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt")
         .sort({ updatedAt: -1 });
     const riderIds = riders.map((rider) => rider._id);
-    const [documents, vehicles] = yield Promise.all([
-        document_model_1.default.find({ userId: { $in: riderIds } }).select("userId documentType verificationStatus"),
-        vehicle_model_1.default.find({ userId: { $in: riderIds } }).select("userId imageUrl"),
-    ]);
-    const docsByUser = new Map();
-    documents.forEach((doc) => {
-        var _a;
-        const key = doc.userId.toString();
-        if (!docsByUser.has(key))
-            docsByUser.set(key, []);
-        (_a = docsByUser.get(key)) === null || _a === void 0 ? void 0 : _a.push(doc);
-    });
+    const vehicles = yield vehicle_model_1.default.find({ userId: { $in: riderIds } }).select("userId imageUrl");
     const vehiclesByUser = new Map();
     vehicles.forEach((vehicle) => {
         var _a;
@@ -334,18 +308,8 @@ exports.getAllRidersForAdmin = (0, catchasync_util_1.CatchAsync)((req, res) => _
     });
     const formatted = yield Promise.all(riders.map((rider) => __awaiter(void 0, void 0, void 0, function* () {
         const userId = rider._id.toString();
-        const riderDocs = docsByUser.get(userId) || [];
         const riderVehicles = vehiclesByUser.get(userId) || [];
-        const documentCompliance = yield (0, onboarding_service_1.getSettingsDocumentCompliance)(userId);
         const accessState = yield (0, onboarding_service_1.getUserAccessState)(rider);
-        const docSummary = {
-            totalDocuments: riderDocs.length,
-            approved: riderDocs.filter((d) => d.verificationStatus === "approved").length,
-            pending: riderDocs.filter((d) => d.verificationStatus === "pending").length,
-            rejected: riderDocs.filter((d) => d.verificationStatus === "rejected").length,
-            documentsUploaded: documentCompliance.documentsUploaded,
-            missingDocuments: documentCompliance.missingDocuments,
-        };
         return {
             id: rider._id,
             firstName: rider.firstName,
@@ -359,7 +323,6 @@ exports.getAllRidersForAdmin = (0, catchasync_util_1.CatchAsync)((req, res) => _
             hasProfileImage: Boolean(rider.profileImageUrl),
             hasVehicle: riderVehicles.length > 0,
             hasVehicleImage: riderVehicles.some((v) => Boolean(v.imageUrl)),
-            documents: docSummary,
             accessState,
             createdAt: rider.createdAt,
             updatedAt: rider.updatedAt,
@@ -388,11 +351,9 @@ exports.getRiderVerificationDetail = (0, catchasync_util_1.CatchAsync)((req, res
         });
         return;
     }
-    const [documents, vehicles, accessState, documentCompliance] = yield Promise.all([
-        document_model_1.default.find({ userId }).select("documentType documentNumber documentUrl verificationStatus rejectionReason uploadedAt updatedAt expiryDate"),
+    const [vehicles, accessState] = yield Promise.all([
         vehicle_model_1.default.find({ userId }).select("vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt"),
         (0, onboarding_service_1.getUserAccessState)(rider),
-        (0, onboarding_service_1.getSettingsDocumentCompliance)(userId),
     ]);
     res.status(200).json({
         success: true,
@@ -413,8 +374,6 @@ exports.getRiderVerificationDetail = (0, catchasync_util_1.CatchAsync)((req, res
                 updatedAt: rider.updatedAt,
             },
             vehicles,
-            documents,
-            settingsChecks: documentCompliance,
         },
     });
 }));
