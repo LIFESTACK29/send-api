@@ -56,6 +56,7 @@ const paystackService = __importStar(require("../services/paystack.service"));
 const log_model_1 = __importDefault(require("../models/log.model"));
 const socket_service_1 = require("../services/socket.service");
 const notification_service_1 = require("../services/notification.service");
+const wallet_service_1 = require("../services/wallet.service");
 const PLATFORM_COMMISSION_RATE = 0.1; // 10%
 const MIN_WITHDRAWAL_AMOUNT = 100000; // ₦1,000 in kobo
 const maskAccountNumber = (accountNumber) => {
@@ -67,12 +68,11 @@ const maskAccountNumber = (accountNumber) => {
     return `${"*".repeat(accountNumber.length - 4)}${visibleDigits}`;
 };
 /**
- * @desc    Create wallet + Paystack customer + DVA
+ * @desc    Create wallet (local wallet only, no DVA)
  * @route   POST /api/v1/wallet/create
  * @access  Private
  */
 const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
     try {
         const userId = (0, auth_middleware_1.getUserId)(req);
         console.log(`[Wallet] Incoming creation request for user: ${userId}`);
@@ -80,48 +80,13 @@ const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        // Check if wallet already exists
-        const existingWallet = yield wallet_model_1.default.findOne({ userId });
-        if (existingWallet) {
-            res.status(400).json({
-                message: "Wallet already exists",
-                wallet: existingWallet,
-            });
-            return;
-        }
-        // Get user details
-        const user = yield user_model_1.default.findById(userId);
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        // 1. Assign Dedicated Virtual Account (Combined Step)
-        console.log(`[Wallet] Assigning DVA for ${user.email}...`);
-        const assignResponse = yield paystackService.assignDedicatedVirtualAccount({
-            email: user.email,
-            first_name: user.firstName,
-            last_name: user.lastName,
-            phone: user.phoneNumber,
-            preferred_bank: "test-bank",
-        });
-        const dedicatedAccount = assignResponse.data;
-        // 2. Create wallet in DB
-        const wallet = yield wallet_model_1.default.create({
-            userId,
-            paystackCustomerCode: dedicatedAccount.customer.customer_code,
-            dedicatedAccountNumber: dedicatedAccount.account_number,
-            dedicatedBankName: ((_a = dedicatedAccount.bank) === null || _a === void 0 ? void 0 : _a.name) || "Test Bank",
-            dedicatedAccountName: dedicatedAccount.account_name,
-            dedicatedAccountReference: dedicatedAccount.assignment.toString(),
-        });
+        const wallet = yield (0, wallet_service_1.ensureWalletForUser)(userId);
         res.status(201).json({
             message: "Wallet created successfully",
             wallet: {
                 id: wallet._id,
                 balance: wallet.balance,
-                accountNumber: wallet.dedicatedAccountNumber,
-                bankName: wallet.dedicatedBankName,
-                accountName: wallet.dedicatedAccountName,
+                balanceInNaira: wallet.balance / 100,
             },
         });
     }

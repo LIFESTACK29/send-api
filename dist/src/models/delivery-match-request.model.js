@@ -111,5 +111,9 @@ const DeliveryMatchRequestSchema = new mongoose_1.Schema({
         type: Number,
         default: 60,
     },
+    declinedRiderIds: {
+        type: [String],
+        default: [],
+    },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model("DeliveryMatchRequest", DeliveryMatchRequestSchema);

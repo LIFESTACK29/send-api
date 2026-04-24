@@ -58,6 +58,10 @@ const initSocket = (server) => {
                 console.log(`🚴 Rider ${userId} joined the riders-pool`);
                 // Set rider as online when they connect
                 user_model_1.default.findByIdAndUpdate(userId, { isOnline: true }).catch(err => console.error("Error setting rider online:", err));
+                socket.emit("rider_presence", {
+                    status: "online",
+                    riderId: userId,
+                });
                 // Handle location updates from rider
                 socket.on("update_location", (data) => __awaiter(void 0, void 0, void 0, function* () {
                     try {

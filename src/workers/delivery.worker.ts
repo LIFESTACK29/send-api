@@ -4,7 +4,7 @@ import Delivery from "../models/delivery.model";
 import DeliveryMatchRequest from "../models/delivery-match-request.model";
 import User from "../models/user.model";
 import { addManualAssignmentCheckJob } from "../queues/delivery.queue";
-import { emitToRiders, emitToRoom } from "../services/socket.service";
+import { emitToRoom } from "../services/socket.service";
 
 /**
  * Handle the delivery worker logic
@@ -29,7 +29,7 @@ export const startDeliveryWorker = () => {
                 if (!matchRequest) return;
                 if (matchRequest.status !== "SEARCHING") return;
 
-                emitToRiders("incoming_match_request", {
+                const payload = {
                     id: matchRequest._id,
                     status: matchRequest.status,
                     pricing: { fee: matchRequest.fee, currency: "NGN" },
@@ -54,6 +54,48 @@ export const startDeliveryWorker = () => {
                         timeoutSeconds: matchRequest.timeoutSeconds,
                     },
                     createdAt: matchRequest.createdAt,
+                };
+
+                const declinedIds = (matchRequest.declinedRiderIds || []).map(
+                    (id: any) => String(id),
+                );
+
+                const nearbyRiders = await User.find({
+                    role: "rider",
+                    isOnline: true,
+                    riderStatus: "active",
+                    _id: { $nin: declinedIds },
+                    currentLocation: {
+                        $nearSphere: {
+                            $geometry: {
+                                type: "Point",
+                                coordinates: [
+                                    matchRequest.pickupLocation.lng,
+                                    matchRequest.pickupLocation.lat,
+                                ],
+                            },
+                            $maxDistance:
+                                matchRequest.searchRadiusMeters || 5000,
+                        },
+                    },
+                }).select("_id");
+
+                const targetRiders =
+                    nearbyRiders.length > 0
+                        ? nearbyRiders
+                        : await User.find({
+                              role: "rider",
+                              isOnline: true,
+                              riderStatus: "active",
+                              _id: { $nin: declinedIds },
+                          }).select("_id");
+
+                targetRiders.forEach((rider) => {
+                    emitToRoom(
+                        `user-${rider._id}`,
+                        "incoming_match_request",
+                        payload,
+                    );
                 });
                 return;
             }

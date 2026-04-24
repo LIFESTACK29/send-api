@@ -53,6 +53,10 @@ export const initSocket = (server: HttpServer) => {
                 User.findByIdAndUpdate(userId, { isOnline: true }).catch(err =>
                     console.error("Error setting rider online:", err)
                 );
+                socket.emit("rider_presence", {
+                    status: "online",
+                    riderId: userId,
+                });
 
                 // Handle location updates from rider
                 socket.on("update_location", async (data: { lat: number; lng: number }) => {

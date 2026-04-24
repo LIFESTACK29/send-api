@@ -33,7 +33,7 @@ const startDeliveryWorker = () => {
                 return;
             if (matchRequest.status !== "SEARCHING")
                 return;
-            (0, socket_service_1.emitToRiders)("incoming_match_request", {
+            const payload = {
                 id: matchRequest._id,
                 status: matchRequest.status,
                 pricing: { fee: matchRequest.fee, currency: "NGN" },
@@ -56,6 +56,36 @@ const startDeliveryWorker = () => {
                     timeoutSeconds: matchRequest.timeoutSeconds,
                 },
                 createdAt: matchRequest.createdAt,
+            };
+            const declinedIds = (matchRequest.declinedRiderIds || []).map((id) => String(id));
+            const nearbyRiders = yield user_model_1.default.find({
+                role: "rider",
+                isOnline: true,
+                riderStatus: "active",
+                _id: { $nin: declinedIds },
+                currentLocation: {
+                    $nearSphere: {
+                        $geometry: {
+                            type: "Point",
+                            coordinates: [
+                                matchRequest.pickupLocation.lng,
+                                matchRequest.pickupLocation.lat,
+                            ],
+                        },
+                        $maxDistance: matchRequest.searchRadiusMeters || 5000,
+                    },
+                },
+            }).select("_id");
+            const targetRiders = nearbyRiders.length > 0
+                ? nearbyRiders
+                : yield user_model_1.default.find({
+                    role: "rider",
+                    isOnline: true,
+                    riderStatus: "active",
+                    _id: { $nin: declinedIds },
+                }).select("_id");
+            targetRiders.forEach((rider) => {
+                (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_match_request", payload);
             });
             return;
         }

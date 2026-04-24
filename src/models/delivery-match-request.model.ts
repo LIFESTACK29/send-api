@@ -24,6 +24,7 @@ export interface IDeliveryMatchRequest extends Document {
     createdDeliveryId?: string;
     searchRadiusMeters: number;
     timeoutSeconds: number;
+    declinedRiderIds: string[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -106,6 +107,10 @@ const DeliveryMatchRequestSchema: Schema = new Schema(
             type: Number,
             default: 60,
         },
+        declinedRiderIds: {
+            type: [String],
+            default: [],
+        },
     },
     { timestamps: true },
 );
@@ -114,4 +119,3 @@ export default mongoose.model<IDeliveryMatchRequest>(
     "DeliveryMatchRequest",
     DeliveryMatchRequestSchema,
 );
-

@@ -1,5 +1,6 @@
 import User, { IUser } from "../models/user.model";
 import Vehicle from "../models/vehicle.model";
+import { ensureWalletForUser } from "./wallet.service";
 
 export type OnboardingStage =
     | "email_pending"
@@ -114,6 +115,7 @@ export const syncUserOnboardingState = async (
 
     if (isComplete && user.riderStatus !== "rejected") {
         user.riderStatus = "active";
+        await ensureWalletForUser(userId);
     } else if (user.riderStatus !== "rejected") {
         user.riderStatus = "inactive";
     }

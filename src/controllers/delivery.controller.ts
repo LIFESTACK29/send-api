@@ -4,6 +4,7 @@ import Delivery from "../models/delivery.model";
 import DeliveryMatchRequest from "../models/delivery-match-request.model";
 import User from "../models/user.model";
 import Vehicle from "../models/vehicle.model";
+import { ensureWalletForUser } from "../services/wallet.service";
 import { emitToRoom, emitToRiders } from "../services/socket.service";
 import {
     addMatchRequestBroadcastJob,
@@ -18,6 +19,8 @@ const BASE_FEE_NAIRA = 1000;
 const PER_KM_FEE_NAIRA = 200;
 const MATCH_RADIUS_METERS = 5000;
 const MATCH_TIMEOUT_SECONDS = 60;
+const RIDER_HOME_HISTORY_LIMIT = 20;
+const MATCH_LOOKBACK_MINUTES = 15;
 
 const getDistance = (
     lat1: number,
@@ -235,6 +238,40 @@ const findNearbyActiveRiders = async (
         },
     }).select("_id");
 
+const findAllActiveRiders = async (excludedRiderIds: string[] = []) =>
+    User.find({
+        role: "rider",
+        isOnline: true,
+        riderStatus: "active",
+        ...(excludedRiderIds.length > 0
+            ? { _id: { $nin: excludedRiderIds } }
+            : {}),
+    }).select("_id");
+
+const emitMatchRequestToRiders = async (
+    matchRequest: any,
+    nearbyRiders: Array<{ _id: any }>,
+    riderPayload: any,
+) => {
+    if (nearbyRiders.length > 0) {
+        nearbyRiders.forEach((rider) => {
+            emitToRoom(`user-${rider._id}`, "incoming_match_request", riderPayload);
+        });
+        return;
+    }
+
+    const excludedRiderIds = (matchRequest.declinedRiderIds || []).map((id: any) =>
+        String(id),
+    );
+    const activeRiders = await findAllActiveRiders(excludedRiderIds);
+
+    if (activeRiders.length === 0) return;
+
+    activeRiders.forEach((rider) => {
+        emitToRoom(`user-${rider._id}`, "incoming_match_request", riderPayload);
+    });
+};
+
 const generateTrackingId = () =>
     `RS-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -422,17 +459,7 @@ export const requestDelivery = async (
             matchRequest,
             nearbyRiders.length,
         );
-        if (nearbyRiders.length > 0) {
-            nearbyRiders.forEach((rider) => {
-                emitToRoom(
-                    `user-${rider._id}`,
-                    "incoming_match_request",
-                    riderPayload,
-                );
-            });
-        } else {
-            emitToRiders("incoming_match_request", riderPayload);
-        }
+        await emitMatchRequestToRiders(matchRequest, nearbyRiders, riderPayload);
 
         await addMatchRequestBroadcastJob(matchRequest);
         await addMatchRequestTimeoutJob(matchRequest);
@@ -509,17 +536,7 @@ export const waitMoreForRider = async (
             matchRequest,
             nearbyRiders.length,
         );
-        if (nearbyRiders.length > 0) {
-            nearbyRiders.forEach((rider) => {
-                emitToRoom(
-                    `user-${rider._id}`,
-                    "incoming_match_request",
-                    riderPayload,
-                );
-            });
-        } else {
-            emitToRiders("incoming_match_request", riderPayload);
-        }
+        await emitMatchRequestToRiders(matchRequest, nearbyRiders, riderPayload);
 
         await addMatchRequestBroadcastJob(matchRequest);
         await addMatchRequestTimeoutJob(matchRequest);
@@ -694,6 +711,217 @@ export const getNearbyRiders = async (
 };
 
 /**
+ * Home payload for rider app:
+ * - wallet balance
+ * - recent ride history
+ * - available nearby incoming ride requests
+ */
+export const getRiderHomeSummary = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const riderId = getUserId(req);
+        if (!riderId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const rider = await User.findById(riderId).select(
+            "currentLocation isOnline riderStatus",
+        );
+        if (!rider) {
+            res.status(404).json({ message: "Rider not found" });
+            return;
+        }
+
+        const [wallet, deliveries, openMatchRequests] = await Promise.all([
+            ensureWalletForUser(riderId),
+            Delivery.find({ riderId })
+                .sort({ createdAt: -1 })
+                .limit(RIDER_HOME_HISTORY_LIMIT),
+            DeliveryMatchRequest.find({
+                status: "SEARCHING",
+                matchedRiderId: { $in: [null, undefined, ""] },
+                declinedRiderIds: { $nin: [riderId] },
+                createdAt: {
+                    $gte: new Date(
+                        Date.now() - MATCH_LOOKBACK_MINUTES * 60 * 1000,
+                    ),
+                },
+            })
+                .sort({ createdAt: -1 })
+                .limit(40),
+        ]);
+
+        const riderLat = rider.currentLocation?.coordinates?.[1];
+        const riderLng = rider.currentLocation?.coordinates?.[0];
+        const incomingRequests =
+            Number.isFinite(riderLat) && Number.isFinite(riderLng)
+                ? openMatchRequests
+                      .map((matchRequest) => {
+                          const distanceKm = getDistance(
+                              riderLat as number,
+                              riderLng as number,
+                              matchRequest.pickupLocation.lat,
+                              matchRequest.pickupLocation.lng,
+                          );
+                          const distanceMeters = Math.round(distanceKm * 1000);
+                          const allowedDistance =
+                              matchRequest.searchRadiusMeters ||
+                              MATCH_RADIUS_METERS;
+
+                          if (distanceMeters > allowedDistance) return null;
+
+                          return {
+                              id: matchRequest._id,
+                              status: matchRequest.status,
+                              pricing: {
+                                  fee: matchRequest.fee,
+                                  feeInNaira: matchRequest.fee,
+                                  currency: "NGN",
+                              },
+                              route: {
+                                  distanceKm: Number(
+                                      (matchRequest.distance || 0).toFixed(2),
+                                  ),
+                                  riderDistanceMeters: distanceMeters,
+                                  pickup: matchRequest.pickupLocation,
+                                  dropoff: matchRequest.dropoffLocation,
+                              },
+                              contact: {
+                                  customer: matchRequest.customer,
+                                  receiver: matchRequest.receiver,
+                              },
+                              package: {
+                                  type: matchRequest.packageType,
+                                  note: matchRequest.deliveryNote || "",
+                                  imageUrl: matchRequest.itemImage || null,
+                              },
+                              actions: {
+                                  acceptEndpoint: `/api/v1/deliveries/${matchRequest._id}/accept`,
+                                  declineEndpoint: `/api/v1/deliveries/match-requests/${matchRequest._id}/decline`,
+                              },
+                              createdAt: matchRequest.createdAt,
+                          };
+                      })
+                      .filter(Boolean)
+                : [];
+
+        const rideHistory = deliveries.map((delivery: any) => ({
+            id: delivery._id,
+            trackingId: delivery.trackingId,
+            status: delivery.status,
+            pricing: {
+                fee: delivery.fee,
+                currency: "NGN",
+            },
+            route: {
+                pickup: delivery.pickupLocation,
+                dropoff: delivery.dropoffLocation,
+                distanceKm: Number((delivery.distance || 0).toFixed(2)),
+            },
+            createdAt: delivery.createdAt,
+            updatedAt: delivery.updatedAt,
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                wallet: {
+                    balance: wallet?.balance || 0,
+                    balanceInNaira: (wallet?.balance || 0) / 100,
+                    hasWallet: Boolean(wallet),
+                },
+                rider: {
+                    isOnline: rider.isOnline,
+                    riderStatus: rider.riderStatus,
+                    hasLocation:
+                        Number.isFinite(riderLat) && Number.isFinite(riderLng),
+                    location:
+                        Number.isFinite(riderLat) && Number.isFinite(riderLng)
+                            ? { lat: riderLat, lng: riderLng }
+                            : null,
+                },
+                incomingRideRequests: incomingRequests,
+                rideHistory,
+                sockets: {
+                    channel: `user-${riderId}`,
+                    events: {
+                        incomingRide: "incoming_match_request",
+                        acceptedByOtherRider: "match_request_taken",
+                    },
+                },
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const declineMatchRequest = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const riderId = getUserId(req);
+        if (!riderId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const { id } = req.params;
+        const { reason } = req.body || {};
+        const matchRequest = await DeliveryMatchRequest.findById(id);
+
+        if (!matchRequest) {
+            res.status(404).json({
+                success: false,
+                message: "Match request not found",
+            });
+            return;
+        }
+
+        if (!["SEARCHING", "NO_RIDER_FOUND"].includes(matchRequest.status)) {
+            res.status(400).json({
+                success: false,
+                message: "Match request is no longer available",
+            });
+            return;
+        }
+
+        const declined = new Set(
+            (matchRequest.declinedRiderIds || []).map((value: any) =>
+                String(value),
+            ),
+        );
+        declined.add(String(riderId));
+        matchRequest.declinedRiderIds = Array.from(declined);
+        await matchRequest.save();
+
+        emitToRoom(`customer-${matchRequest.customerId}`, "rider_declined_offer", {
+            matchRequestId: matchRequest._id,
+            riderId,
+            reason: reason || null,
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Ride declined successfully",
+            data: {
+                matchRequestId: matchRequest._id,
+                riderId,
+                status: matchRequest.status,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Accepts either a match request id (new flow) or a pending delivery id (manual/admin flow).
  */
 export const acceptDelivery = async (
@@ -773,6 +1001,12 @@ export const acceptDelivery = async (
                 rider: riderDetails,
                 matchRequestId: matchRequest._id,
             };
+
+            emitToRiders("match_request_taken", {
+                matchRequestId: matchRequest._id,
+                acceptedByRiderId: riderId,
+                deliveryId: delivery._id,
+            });
 
             emitToRoom(
                 `customer-${delivery.customerId}`,

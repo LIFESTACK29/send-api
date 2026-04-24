@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getRiderOnboardingState = exports.getUserAccessState = exports.syncUserOnboardingState = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
+const wallet_service_1 = require("./wallet.service");
 const toPercentage = (steps) => {
     const completed = steps.filter(Boolean).length;
     return Math.round((completed / steps.length) * 100);
@@ -77,6 +78,7 @@ const syncUserOnboardingState = (userId) => __awaiter(void 0, void 0, void 0, fu
     });
     if (isComplete && user.riderStatus !== "rejected") {
         user.riderStatus = "active";
+        yield (0, wallet_service_1.ensureWalletForUser)(userId);
     }
     else if (user.riderStatus !== "rejected") {
         user.riderStatus = "inactive";

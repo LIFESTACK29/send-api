@@ -10,6 +10,7 @@ import * as paystackService from "../services/paystack.service";
 import Log from "../models/log.model";
 import { emitToRoom } from "../services/socket.service";
 import { sendPushNotification } from "../services/notification.service";
+import { ensureWalletForUser } from "../services/wallet.service";
 import {
     PaystackWebhookPayload,
     ChargeData,
@@ -28,7 +29,7 @@ const maskAccountNumber = (accountNumber?: string): string => {
 };
 
 /**
- * @desc    Create wallet + Paystack customer + DVA
+ * @desc    Create wallet (local wallet only, no DVA)
  * @route   POST /api/v1/wallet/create
  * @access  Private
  */
@@ -45,53 +46,14 @@ export const createWallet = async (
             return;
         }
 
-        // Check if wallet already exists
-        const existingWallet = await Wallet.findOne({ userId });
-        if (existingWallet) {
-            res.status(400).json({
-                message: "Wallet already exists",
-                wallet: existingWallet,
-            });
-            return;
-        }
-
-        // Get user details
-        const user = await User.findById(userId);
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-
-        // 1. Assign Dedicated Virtual Account (Combined Step)
-        console.log(`[Wallet] Assigning DVA for ${user.email}...`);
-        const assignResponse = await paystackService.assignDedicatedVirtualAccount({
-            email: user.email,
-            first_name: user.firstName,
-            last_name: user.lastName,
-            phone: user.phoneNumber,
-            preferred_bank: "test-bank",
-        });
-
-        const dedicatedAccount = assignResponse.data;
-
-        // 2. Create wallet in DB
-        const wallet = await Wallet.create({
-            userId,
-            paystackCustomerCode: dedicatedAccount.customer.customer_code,
-            dedicatedAccountNumber: dedicatedAccount.account_number,
-            dedicatedBankName: dedicatedAccount.bank?.name || "Test Bank",
-            dedicatedAccountName: dedicatedAccount.account_name,
-            dedicatedAccountReference: dedicatedAccount.assignment.toString(),
-        });
+        const wallet = await ensureWalletForUser(userId);
 
         res.status(201).json({
             message: "Wallet created successfully",
             wallet: {
                 id: wallet._id,
                 balance: wallet.balance,
-                accountNumber: wallet.dedicatedAccountNumber,
-                bankName: wallet.dedicatedBankName,
-                accountName: wallet.dedicatedAccountName,
+                balanceInNaira: wallet.balance / 100,
             },
         });
     } catch (error: any) {

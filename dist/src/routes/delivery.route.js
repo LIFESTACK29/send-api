@@ -8,10 +8,12 @@ const router = (0, express_1.Router)();
 // Protect all delivery routes
 router.use(auth_middleware_1.authenticate);
 router.use(auth_middleware_1.requireActiveRiderAccess);
+router.get("/rider/home", delivery_controller_1.getRiderHomeSummary);
 router.get("/nearby-riders", delivery_controller_1.getNearbyRiders);
 router.get("/my-deliveries", delivery_controller_1.getMyDeliveries);
 router.post("/calculate-fee", delivery_controller_1.calculateDeliveryFee);
 router.post("/request", upload_middleware_1.upload.single("itemImage"), delivery_controller_1.requestDelivery);
+router.post("/match-requests/:id/decline", delivery_controller_1.declineMatchRequest);
 router.post("/match-requests/:id/wait-more", delivery_controller_1.waitMoreForRider);
 router.post("/match-requests/:id/create-manual", delivery_controller_1.createDeliveryManually);
 router.post("/:id/assign-rider", delivery_controller_1.assignRiderToDeliveryByAdmin);

@@ -14,6 +14,8 @@ import {
     waitMoreForRider,
     createDeliveryManually,
     assignRiderToDeliveryByAdmin,
+    declineMatchRequest,
+    getRiderHomeSummary,
 } from "../controllers/delivery.controller";
 import { upload } from "../middlewares/upload.middleware";
 
@@ -22,10 +24,12 @@ const router = Router();
 // Protect all delivery routes
 router.use(authenticate);
 router.use(requireActiveRiderAccess);
+router.get("/rider/home", getRiderHomeSummary);
 router.get("/nearby-riders", getNearbyRiders);
 router.get("/my-deliveries", getMyDeliveries);
 router.post("/calculate-fee", calculateDeliveryFee);
 router.post("/request", upload.single("itemImage"), requestDelivery);
+router.post("/match-requests/:id/decline", declineMatchRequest);
 router.post("/match-requests/:id/wait-more", waitMoreForRider);
 router.post("/match-requests/:id/create-manual", createDeliveryManually);
 router.post("/:id/assign-rider", assignRiderToDeliveryByAdmin);
