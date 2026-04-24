@@ -4,6 +4,7 @@ import {
     verifyOtp,
     resendOtp,
     login,
+    adminLogin,
     getMe,
     uploadProfileImage,
 } from "../controllers/auth.controller";
@@ -16,6 +17,7 @@ router.post("/register", register);
 router.post("/verify-otp", verifyOtp);
 router.post("/resend-otp", resendOtp);
 router.post("/login", login);
+router.post("/admin/login", adminLogin);
 router.get("/me", authenticate, getMe);
 router.post(
     "/upload-profile-image",

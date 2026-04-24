@@ -319,6 +319,74 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
 };
 
 /**
+ * @desc    Login admin user
+ * @route   POST /api/v1/auth/admin/login
+ * @access  Public
+ */
+export const adminLogin: RequestHandler = async (
+    req: Request,
+    res: Response,
+) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            res.status(400).json({
+                message: "Email and password are required",
+            });
+            return;
+        }
+
+        const user = await User.findOne({ email }).select("+password");
+        if (!user) {
+            res.status(401).json({ message: "Invalid email or password" });
+            return;
+        }
+
+        const isMatch = await user.comparePassword(password);
+        if (!isMatch) {
+            res.status(401).json({ message: "Invalid email or password" });
+            return;
+        }
+
+        if (user.role !== "admin") {
+            res.status(403).json({ message: "Forbidden - admin only" });
+            return;
+        }
+
+        if (!user.isOnboarded) {
+            await createAndSendOtp(user._id.toString(), user.email);
+            res.status(200).json({
+                message: "Please verify your email. OTP has been sent.",
+                isOnboarded: false,
+                userId: user._id,
+                accessState: {
+                    onboardingStage: "email_pending",
+                    verificationStatus: "not_submitted",
+                    onboardingRequired: true,
+                    canAccessHome: false,
+                    accessStatus: "email_verification_required",
+                    nextStep: "email_otp",
+                    currentStep: "email_otp",
+                },
+            });
+            return;
+        }
+
+        const token = signToken(user._id.toString(), user.role);
+        const userResponse = await buildUserResponse(user);
+
+        res.status(200).json({
+            message: "Admin login successful",
+            token,
+            user: userResponse,
+        });
+    } catch (error: any) {
+        console.error("Error in adminLogin:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+/**
  * @desc    Get current user profile
  * @route   GET /api/v1/auth/me
  * @access  Private

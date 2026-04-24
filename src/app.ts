@@ -10,6 +10,7 @@ import walletRoute from "./routes/wallet.route";
 import vehicleRoute from "./routes/vehicle.route";
 import documentRoute from "./routes/document.route";
 import onboardingRoute from "./routes/onboarding.route";
+import adminRoute from "./routes/admin.route";
 import errorMiddleware from "./middlewares/error.middleware";
 
 dotenv.config();
@@ -33,6 +34,7 @@ app.use("/api/v1/user", userRoute);
 app.use("/api/v1/deliveries", deliveryRoute);
 app.use("/api/v1/wallet", walletRoute);
 app.use("/api/v1/onboarding", onboardingRoute);
+app.use("/api/v1/admin", adminRoute);
 app.use("/api/v1/riders", vehicleRoute);
 app.use("/api/v1/riders", documentRoute);
 

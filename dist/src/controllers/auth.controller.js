@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadProfileImage = exports.getMe = exports.login = exports.resendOtp = exports.verifyOtp = exports.register = void 0;
+exports.uploadProfileImage = exports.getMe = exports.adminLogin = exports.login = exports.resendOtp = exports.verifyOtp = exports.register = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const otp_model_1 = __importDefault(require("../models/otp.model"));
@@ -273,6 +273,66 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.login = login;
+/**
+ * @desc    Login admin user
+ * @route   POST /api/v1/auth/admin/login
+ * @access  Public
+ */
+const adminLogin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            res.status(400).json({
+                message: "Email and password are required",
+            });
+            return;
+        }
+        const user = yield user_model_1.default.findOne({ email }).select("+password");
+        if (!user) {
+            res.status(401).json({ message: "Invalid email or password" });
+            return;
+        }
+        const isMatch = yield user.comparePassword(password);
+        if (!isMatch) {
+            res.status(401).json({ message: "Invalid email or password" });
+            return;
+        }
+        if (user.role !== "admin") {
+            res.status(403).json({ message: "Forbidden - admin only" });
+            return;
+        }
+        if (!user.isOnboarded) {
+            yield createAndSendOtp(user._id.toString(), user.email);
+            res.status(200).json({
+                message: "Please verify your email. OTP has been sent.",
+                isOnboarded: false,
+                userId: user._id,
+                accessState: {
+                    onboardingStage: "email_pending",
+                    verificationStatus: "not_submitted",
+                    onboardingRequired: true,
+                    canAccessHome: false,
+                    accessStatus: "email_verification_required",
+                    nextStep: "email_otp",
+                    currentStep: "email_otp",
+                },
+            });
+            return;
+        }
+        const token = signToken(user._id.toString(), user.role);
+        const userResponse = yield buildUserResponse(user);
+        res.status(200).json({
+            message: "Admin login successful",
+            token,
+            user: userResponse,
+        });
+    }
+    catch (error) {
+        console.error("Error in adminLogin:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+exports.adminLogin = adminLogin;
 /**
  * @desc    Get current user profile
  * @route   GET /api/v1/auth/me

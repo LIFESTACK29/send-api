@@ -1,11 +1,13 @@
 import { Request, Response, RequestHandler } from "express";
 import Document from "../models/document.model";
 import User from "../models/user.model";
+import Vehicle from "../models/vehicle.model";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
 import {
     getSettingsDocumentCompliance,
+    getUserAccessState,
     syncUserOnboardingState,
 } from "../services/onboarding.service";
 
@@ -364,6 +366,155 @@ export const verifyRider: RequestHandler = CatchAsync(
                 onboardingStage: user.onboardingStage,
                 verificationStatus: user.verificationStatus,
                 verificationNotes: user.verificationNotes,
+            },
+        });
+    },
+);
+
+/**
+ * @desc    Admin: Get all riders with verification and document summary
+ * @route   GET /api/v1/admin/riders
+ * @access  Private (Admin Only)
+ */
+export const getAllRidersForAdmin: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
+        const riders = await User.find({ role: "rider" })
+            .select(
+                "firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt",
+            )
+            .sort({ updatedAt: -1 });
+
+        const riderIds = riders.map((rider) => rider._id);
+        const [documents, vehicles] = await Promise.all([
+            Document.find({ userId: { $in: riderIds } }).select(
+                "userId documentType verificationStatus",
+            ),
+            Vehicle.find({ userId: { $in: riderIds } }).select("userId imageUrl"),
+        ]);
+
+        const docsByUser = new Map<string, any[]>();
+        documents.forEach((doc) => {
+            const key = doc.userId.toString();
+            if (!docsByUser.has(key)) docsByUser.set(key, []);
+            docsByUser.get(key)?.push(doc);
+        });
+
+        const vehiclesByUser = new Map<string, any[]>();
+        vehicles.forEach((vehicle) => {
+            const key = vehicle.userId.toString();
+            if (!vehiclesByUser.has(key)) vehiclesByUser.set(key, []);
+            vehiclesByUser.get(key)?.push(vehicle);
+        });
+
+        const formatted = await Promise.all(
+            riders.map(async (rider) => {
+                const userId = rider._id.toString();
+                const riderDocs = docsByUser.get(userId) || [];
+                const riderVehicles = vehiclesByUser.get(userId) || [];
+                const documentCompliance =
+                    await getSettingsDocumentCompliance(userId);
+                const accessState = await getUserAccessState(rider as any);
+
+                const docSummary = {
+                    totalDocuments: riderDocs.length,
+                    approved: riderDocs.filter(
+                        (d) => d.verificationStatus === "approved",
+                    ).length,
+                    pending: riderDocs.filter(
+                        (d) => d.verificationStatus === "pending",
+                    ).length,
+                    rejected: riderDocs.filter(
+                        (d) => d.verificationStatus === "rejected",
+                    ).length,
+                    documentsUploaded: documentCompliance.documentsUploaded,
+                    missingDocuments: documentCompliance.missingDocuments,
+                };
+
+                return {
+                    id: rider._id,
+                    firstName: rider.firstName,
+                    lastName: rider.lastName,
+                    email: rider.email,
+                    phoneNumber: rider.phoneNumber,
+                    riderStatus: rider.riderStatus,
+                    onboardingStage: rider.onboardingStage,
+                    verificationStatus: rider.verificationStatus,
+                    verificationNotes: rider.verificationNotes,
+                    hasProfileImage: Boolean(rider.profileImageUrl),
+                    hasVehicle: riderVehicles.length > 0,
+                    hasVehicleImage: riderVehicles.some((v) => Boolean(v.imageUrl)),
+                    documents: docSummary,
+                    accessState,
+                    createdAt: rider.createdAt,
+                    updatedAt: rider.updatedAt,
+                };
+            }),
+        );
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalRiders: formatted.length,
+                riders: formatted,
+            },
+        });
+    },
+);
+
+/**
+ * @desc    Admin: Get single rider verification details
+ * @route   GET /api/v1/admin/riders/:userId
+ * @access  Private (Admin Only)
+ */
+export const getRiderVerificationDetail: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
+        const { userId } = req.params;
+
+        const rider = await User.findOne({ _id: userId, role: "rider" }).select(
+            "firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt",
+        );
+
+        if (!rider) {
+            res.status(404).json({
+                success: false,
+                message: "Rider not found",
+            });
+            return;
+        }
+
+        const [documents, vehicles, accessState, documentCompliance] =
+            await Promise.all([
+                Document.find({ userId }).select(
+                    "documentType documentNumber documentUrl verificationStatus rejectionReason uploadedAt updatedAt expiryDate",
+                ),
+                Vehicle.find({ userId }).select(
+                    "vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt",
+                ),
+                getUserAccessState(rider as any),
+                getSettingsDocumentCompliance(userId),
+            ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                rider: {
+                    id: rider._id,
+                    firstName: rider.firstName,
+                    lastName: rider.lastName,
+                    email: rider.email,
+                    phoneNumber: rider.phoneNumber,
+                    riderStatus: rider.riderStatus,
+                    onboardingStage: rider.onboardingStage,
+                    verificationStatus: rider.verificationStatus,
+                    verificationNotes: rider.verificationNotes,
+                    profileImageUrl: rider.profileImageUrl,
+                    accessState,
+                    createdAt: rider.createdAt,
+                    updatedAt: rider.updatedAt,
+                },
+                vehicles,
+                documents,
+                settingsChecks: documentCompliance,
             },
         });
     },

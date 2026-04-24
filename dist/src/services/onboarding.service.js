@@ -44,6 +44,16 @@ const toPercentage = (steps) => {
     const completed = steps.filter(Boolean).length;
     return Math.round((completed / steps.length) * 100);
 };
+const resolveVehicleStep = (params) => {
+    const { hasVehicle, hasCompleteVehicleDetails, hasVehicleImage } = params;
+    if (!hasVehicle)
+        return "vehicle_selection";
+    if (!hasCompleteVehicleDetails)
+        return "vehicle_details";
+    if (!hasVehicleImage)
+        return "vehicle_image";
+    return "submit_verification";
+};
 const mapVerificationStatus = (riderStatus, existingStatus) => {
     if (riderStatus === "active")
         return "approved";
@@ -146,6 +156,7 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
                 canAccessHome: false,
                 accessStatus: "email_verification_required",
                 nextStep: "email_otp",
+                currentStep: "email_otp",
             };
         }
         return {
@@ -155,6 +166,7 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
             canAccessHome: true,
             accessStatus: "approved",
             nextStep: "home",
+            currentStep: "home",
         };
     }
     const [vehicles, docsCompliance] = yield Promise.all([
@@ -181,6 +193,18 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
         stage === "pending_admin_approval" ||
         stage === "rejected";
     if (!onboardingComplete) {
+        const vehicleStep = resolveVehicleStep({
+            hasVehicle,
+            hasCompleteVehicleDetails,
+            hasVehicleImage,
+        });
+        const currentStep = stage === "email_pending"
+            ? "email_otp"
+            : stage === "profile_pending"
+                ? "profile_image"
+                : stage === "vehicle_pending"
+                    ? vehicleStep
+                    : "submit_verification";
         return {
             onboardingStage: stage,
             verificationStatus: hydratedUser.verificationStatus || "not_submitted",
@@ -194,8 +218,9 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
                 : stage === "profile_pending"
                     ? "profile_image"
                     : stage === "vehicle_pending"
-                        ? "vehicle_details"
+                        ? vehicleStep
                         : "submit_verification",
+            currentStep,
             riderStatus: hydratedUser.riderStatus,
             onboardingProgress,
             settingsChecks: docsCompliance,
@@ -210,6 +235,7 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
             canAccessHome: false,
             accessStatus: "pending_admin_approval",
             nextStep: "pending_admin_approval",
+            currentStep: "pending_admin_approval",
             riderStatus: hydratedUser.riderStatus,
             onboardingProgress,
             settingsChecks: docsCompliance,
@@ -224,6 +250,7 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
             canAccessHome: false,
             accessStatus: "settings_incomplete",
             nextStep: "settings_documents",
+            currentStep: "settings_documents",
             riderStatus: hydratedUser.riderStatus,
             onboardingProgress,
             settingsChecks: docsCompliance,
@@ -237,6 +264,7 @@ const getUserAccessState = (user) => __awaiter(void 0, void 0, void 0, function*
         canAccessHome: true,
         accessStatus: "approved",
         nextStep: "home",
+        currentStep: "home",
         riderStatus: hydratedUser.riderStatus,
         onboardingProgress,
         settingsChecks: docsCompliance,

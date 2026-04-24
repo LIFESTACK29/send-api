@@ -13,6 +13,8 @@ import {
     deleteDocument,
     verifyDocument,
     verifyRider,
+    getAllRidersForAdmin,
+    getRiderVerificationDetail,
 } from "../controllers/document.controller";
 
 const router = Router();
@@ -54,6 +56,13 @@ router.put(
     authenticate,
     authorize("admin"),
     verifyRider,
+);
+router.get("/admin/riders", authenticate, authorize("admin"), getAllRidersForAdmin);
+router.get(
+    "/admin/riders/:userId",
+    authenticate,
+    authorize("admin"),
+    getRiderVerificationDetail,
 );
 
 export default router;

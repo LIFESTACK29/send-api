@@ -12,9 +12,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyRider = exports.verifyDocument = exports.deleteDocument = exports.getDocument = exports.getUserDocuments = exports.uploadDocument = exports.getRequiredDocuments = void 0;
+exports.getRiderVerificationDetail = exports.getAllRidersForAdmin = exports.verifyRider = exports.verifyDocument = exports.deleteDocument = exports.getDocument = exports.getUserDocuments = exports.uploadDocument = exports.getRequiredDocuments = void 0;
 const document_model_1 = __importDefault(require("../models/document.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
+const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
 const upload_middleware_1 = require("../middlewares/upload.middleware");
 const catchasync_util_1 = require("../utils/catchasync.util");
 const onboarding_service_1 = require("../services/onboarding.service");
@@ -298,6 +299,122 @@ exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(
             onboardingStage: user.onboardingStage,
             verificationStatus: user.verificationStatus,
             verificationNotes: user.verificationNotes,
+        },
+    });
+}));
+/**
+ * @desc    Admin: Get all riders with verification and document summary
+ * @route   GET /api/v1/admin/riders
+ * @access  Private (Admin Only)
+ */
+exports.getAllRidersForAdmin = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const riders = yield user_model_1.default.find({ role: "rider" })
+        .select("firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt")
+        .sort({ updatedAt: -1 });
+    const riderIds = riders.map((rider) => rider._id);
+    const [documents, vehicles] = yield Promise.all([
+        document_model_1.default.find({ userId: { $in: riderIds } }).select("userId documentType verificationStatus"),
+        vehicle_model_1.default.find({ userId: { $in: riderIds } }).select("userId imageUrl"),
+    ]);
+    const docsByUser = new Map();
+    documents.forEach((doc) => {
+        var _a;
+        const key = doc.userId.toString();
+        if (!docsByUser.has(key))
+            docsByUser.set(key, []);
+        (_a = docsByUser.get(key)) === null || _a === void 0 ? void 0 : _a.push(doc);
+    });
+    const vehiclesByUser = new Map();
+    vehicles.forEach((vehicle) => {
+        var _a;
+        const key = vehicle.userId.toString();
+        if (!vehiclesByUser.has(key))
+            vehiclesByUser.set(key, []);
+        (_a = vehiclesByUser.get(key)) === null || _a === void 0 ? void 0 : _a.push(vehicle);
+    });
+    const formatted = yield Promise.all(riders.map((rider) => __awaiter(void 0, void 0, void 0, function* () {
+        const userId = rider._id.toString();
+        const riderDocs = docsByUser.get(userId) || [];
+        const riderVehicles = vehiclesByUser.get(userId) || [];
+        const documentCompliance = yield (0, onboarding_service_1.getSettingsDocumentCompliance)(userId);
+        const accessState = yield (0, onboarding_service_1.getUserAccessState)(rider);
+        const docSummary = {
+            totalDocuments: riderDocs.length,
+            approved: riderDocs.filter((d) => d.verificationStatus === "approved").length,
+            pending: riderDocs.filter((d) => d.verificationStatus === "pending").length,
+            rejected: riderDocs.filter((d) => d.verificationStatus === "rejected").length,
+            documentsUploaded: documentCompliance.documentsUploaded,
+            missingDocuments: documentCompliance.missingDocuments,
+        };
+        return {
+            id: rider._id,
+            firstName: rider.firstName,
+            lastName: rider.lastName,
+            email: rider.email,
+            phoneNumber: rider.phoneNumber,
+            riderStatus: rider.riderStatus,
+            onboardingStage: rider.onboardingStage,
+            verificationStatus: rider.verificationStatus,
+            verificationNotes: rider.verificationNotes,
+            hasProfileImage: Boolean(rider.profileImageUrl),
+            hasVehicle: riderVehicles.length > 0,
+            hasVehicleImage: riderVehicles.some((v) => Boolean(v.imageUrl)),
+            documents: docSummary,
+            accessState,
+            createdAt: rider.createdAt,
+            updatedAt: rider.updatedAt,
+        };
+    })));
+    res.status(200).json({
+        success: true,
+        data: {
+            totalRiders: formatted.length,
+            riders: formatted,
+        },
+    });
+}));
+/**
+ * @desc    Admin: Get single rider verification details
+ * @route   GET /api/v1/admin/riders/:userId
+ * @access  Private (Admin Only)
+ */
+exports.getRiderVerificationDetail = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { userId } = req.params;
+    const rider = yield user_model_1.default.findOne({ _id: userId, role: "rider" }).select("firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt");
+    if (!rider) {
+        res.status(404).json({
+            success: false,
+            message: "Rider not found",
+        });
+        return;
+    }
+    const [documents, vehicles, accessState, documentCompliance] = yield Promise.all([
+        document_model_1.default.find({ userId }).select("documentType documentNumber documentUrl verificationStatus rejectionReason uploadedAt updatedAt expiryDate"),
+        vehicle_model_1.default.find({ userId }).select("vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt"),
+        (0, onboarding_service_1.getUserAccessState)(rider),
+        (0, onboarding_service_1.getSettingsDocumentCompliance)(userId),
+    ]);
+    res.status(200).json({
+        success: true,
+        data: {
+            rider: {
+                id: rider._id,
+                firstName: rider.firstName,
+                lastName: rider.lastName,
+                email: rider.email,
+                phoneNumber: rider.phoneNumber,
+                riderStatus: rider.riderStatus,
+                onboardingStage: rider.onboardingStage,
+                verificationStatus: rider.verificationStatus,
+                verificationNotes: rider.verificationNotes,
+                profileImageUrl: rider.profileImageUrl,
+                accessState,
+                createdAt: rider.createdAt,
+                updatedAt: rider.updatedAt,
+            },
+            vehicles,
+            documents,
+            settingsChecks: documentCompliance,
         },
     });
 }));

@@ -15,4 +15,6 @@ router.delete("/:userId/documents/:documentId", auth_middleware_1.authenticate, 
 // Admin routes - Verification
 router.put("/admin/documents/:documentId/verify", auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)("admin"), document_controller_1.verifyDocument);
 router.put("/admin/riders/:userId/verify", auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)("admin"), document_controller_1.verifyRider);
+router.get("/admin/riders", auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)("admin"), document_controller_1.getAllRidersForAdmin);
+router.get("/admin/riders/:userId", auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)("admin"), document_controller_1.getRiderVerificationDetail);
 exports.default = router;

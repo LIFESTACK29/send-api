@@ -9,6 +9,7 @@ router.post("/register", auth_controller_1.register);
 router.post("/verify-otp", auth_controller_1.verifyOtp);
 router.post("/resend-otp", auth_controller_1.resendOtp);
 router.post("/login", auth_controller_1.login);
+router.post("/admin/login", auth_controller_1.adminLogin);
 router.get("/me", auth_middleware_1.authenticate, auth_controller_1.getMe);
 router.post("/upload-profile-image", auth_middleware_1.authenticate, upload_middleware_1.upload.single("profileImage"), auth_controller_1.uploadProfileImage);
 exports.default = router;
