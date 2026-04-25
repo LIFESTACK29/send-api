@@ -29,7 +29,7 @@ const maskAccountNumber = (accountNumber?: string): string => {
 };
 
 /**
- * @desc    Create wallet (local wallet only, no DVA)
+ * @desc    Create wallet (customer gets DVA, rider/admin local wallet)
  * @route   POST /api/v1/wallet/create
  * @access  Private
  */
@@ -46,14 +46,50 @@ export const createWallet = async (
             return;
         }
 
+        const user = await User.findById(userId);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+
         const wallet = await ensureWalletForUser(userId);
+
+        // Customers should have DVA for funding. Riders/admins use local wallet only.
+        if (user.role === "customer" && !wallet.dedicatedAccountNumber) {
+            const assignResponse = await paystackService.assignDedicatedVirtualAccount(
+                {
+                    email: user.email,
+                    first_name: user.firstName,
+                    last_name: user.lastName,
+                    phone: user.phoneNumber,
+                    preferred_bank: "test-bank",
+                },
+            );
+
+            const dedicatedAccount = assignResponse.data;
+            wallet.paystackCustomerCode =
+                dedicatedAccount.customer.customer_code ||
+                wallet.paystackCustomerCode;
+            wallet.dedicatedAccountNumber = dedicatedAccount.account_number;
+            wallet.dedicatedBankName =
+                dedicatedAccount.bank?.name || wallet.dedicatedBankName;
+            wallet.dedicatedAccountName = dedicatedAccount.account_name;
+            wallet.dedicatedAccountReference =
+                dedicatedAccount.assignment?.toString() ||
+                wallet.dedicatedAccountReference;
+            await wallet.save();
+        }
 
         res.status(201).json({
             message: "Wallet created successfully",
             wallet: {
                 id: wallet._id,
+                role: user.role,
                 balance: wallet.balance,
                 balanceInNaira: wallet.balance / 100,
+                accountNumber: wallet.dedicatedAccountNumber,
+                bankName: wallet.dedicatedBankName,
+                accountName: wallet.dedicatedAccountName,
             },
         });
     } catch (error: any) {

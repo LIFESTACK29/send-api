@@ -1,7 +1,7 @@
+dist
+/dist
 .vercel
 node_modules
 package-lock.json
 .env
 .env.local
-dist
-/dist

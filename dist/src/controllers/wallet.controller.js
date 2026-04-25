@@ -68,11 +68,12 @@ const maskAccountNumber = (accountNumber) => {
     return `${"*".repeat(accountNumber.length - 4)}${visibleDigits}`;
 };
 /**
- * @desc    Create wallet (local wallet only, no DVA)
+ * @desc    Create wallet (customer gets DVA, rider/admin local wallet)
  * @route   POST /api/v1/wallet/create
  * @access  Private
  */
 const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
     try {
         const userId = (0, auth_middleware_1.getUserId)(req);
         console.log(`[Wallet] Incoming creation request for user: ${userId}`);
@@ -80,13 +81,44 @@ const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
+        const user = yield user_model_1.default.findById(userId);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
         const wallet = yield (0, wallet_service_1.ensureWalletForUser)(userId);
+        // Customers should have DVA for funding. Riders/admins use local wallet only.
+        if (user.role === "customer" && !wallet.dedicatedAccountNumber) {
+            const assignResponse = yield paystackService.assignDedicatedVirtualAccount({
+                email: user.email,
+                first_name: user.firstName,
+                last_name: user.lastName,
+                phone: user.phoneNumber,
+                preferred_bank: "test-bank",
+            });
+            const dedicatedAccount = assignResponse.data;
+            wallet.paystackCustomerCode =
+                dedicatedAccount.customer.customer_code ||
+                    wallet.paystackCustomerCode;
+            wallet.dedicatedAccountNumber = dedicatedAccount.account_number;
+            wallet.dedicatedBankName =
+                ((_a = dedicatedAccount.bank) === null || _a === void 0 ? void 0 : _a.name) || wallet.dedicatedBankName;
+            wallet.dedicatedAccountName = dedicatedAccount.account_name;
+            wallet.dedicatedAccountReference =
+                ((_b = dedicatedAccount.assignment) === null || _b === void 0 ? void 0 : _b.toString()) ||
+                    wallet.dedicatedAccountReference;
+            yield wallet.save();
+        }
         res.status(201).json({
             message: "Wallet created successfully",
             wallet: {
                 id: wallet._id,
+                role: user.role,
                 balance: wallet.balance,
                 balanceInNaira: wallet.balance / 100,
+                accountNumber: wallet.dedicatedAccountNumber,
+                bankName: wallet.dedicatedBankName,
+                accountName: wallet.dedicatedAccountName,
             },
         });
     }
