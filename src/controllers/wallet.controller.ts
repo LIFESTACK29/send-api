@@ -399,6 +399,7 @@ const handleTransferReversed = async (data: TransferData) => {
  * This is where the wallet is officially "activated" or created in our DB
  */
 const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountData) => {
+    console.log('wallet dva created successfully', event, data)
     const { customer, dedicated_account } = data;
     if (!dedicated_account) return;
 
@@ -406,7 +407,6 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
     let wallet = await Wallet.findOne({ paystackCustomerCode: customer.customer_code });
 
     if (!wallet) {
-        // Fallback: Find user by email if wallet doesn't exist yet
         const user = await User.findOne({ email: customer.email });
         if (user) {
             wallet = await Wallet.create({
