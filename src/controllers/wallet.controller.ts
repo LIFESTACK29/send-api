@@ -122,7 +122,7 @@ export const getWalletBalance = async (
             });
             return;
         }
-
+console.log(wallet)
         res.status(200).json({
             wallet: {
                 id: wallet._id,
