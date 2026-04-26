@@ -21,6 +21,7 @@ const MATCH_RADIUS_METERS = 5000;
 const MATCH_TIMEOUT_SECONDS = 60;
 const RIDER_HOME_HISTORY_LIMIT = 20;
 const MATCH_LOOKBACK_MINUTES = 15;
+type DeliveryViewer = "customer" | "rider";
 
 const getDistance = (
     lat1: number,
@@ -119,17 +120,51 @@ const parseContactDetails = (
     };
 };
 
+const getPricingBreakdown = (distance: number, totalFareOverride?: number) => {
+    const distanceFare = Math.ceil(distance * PER_KM_FEE_NAIRA);
+    const totalFare =
+        totalFareOverride !== undefined
+            ? totalFareOverride
+            : Math.ceil(BASE_FEE_NAIRA + distanceFare);
+
+    return {
+        baseFare: BASE_FEE_NAIRA,
+        distanceFare,
+        totalFare,
+    };
+};
+
+const buildPricingForViewer = (
+    distance: number,
+    viewer: DeliveryViewer,
+    totalFareOverride?: number,
+) => {
+    const breakdown = getPricingBreakdown(distance, totalFareOverride);
+
+    if (viewer === "rider") {
+        return {
+            fee: breakdown.distanceFare,
+            distanceFare: breakdown.distanceFare,
+            currency: "NGN",
+        };
+    }
+
+    return {
+        fee: breakdown.totalFare,
+        totalFare: breakdown.totalFare,
+        currency: "NGN",
+    };
+};
+
 const createMobileDeliveryResponse = (
     delivery: any,
     nearbyRidersCount: number,
+    viewer: DeliveryViewer = "customer",
 ) => ({
     id: delivery._id,
     trackingId: delivery.trackingId,
     status: delivery.status,
-    pricing: {
-        fee: delivery.fee,
-        currency: "NGN",
-    },
+    pricing: buildPricingForViewer(delivery.distance || 0, viewer, delivery.fee),
     route: {
         distanceKm: Number((delivery.distance || 0).toFixed(2)),
         pickup: delivery.pickupLocation,
@@ -157,13 +192,15 @@ const createMobileDeliveryResponse = (
 const createMatchRequestResponse = (
     matchRequest: any,
     nearbyRidersCount: number,
+    viewer: DeliveryViewer = "customer",
 ) => ({
     id: matchRequest._id,
     status: matchRequest.status,
-    pricing: {
-        fee: matchRequest.fee,
-        currency: "NGN",
-    },
+    pricing: buildPricingForViewer(
+        matchRequest.distance || 0,
+        viewer,
+        matchRequest.fee,
+    ),
     route: {
         distanceKm: Number((matchRequest.distance || 0).toFixed(2)),
         pickup: matchRequest.pickupLocation,
@@ -458,6 +495,12 @@ export const requestDelivery = async (
         const riderPayload = createMatchRequestResponse(
             matchRequest,
             nearbyRiders.length,
+            "rider",
+        );
+        const customerPayload = createMatchRequestResponse(
+            matchRequest,
+            nearbyRiders.length,
+            "customer",
         );
         await emitMatchRequestToRiders(matchRequest, nearbyRiders, riderPayload);
 
@@ -468,7 +511,7 @@ export const requestDelivery = async (
             success: true,
             message:
                 "Rider search started. Delivery will be created after rider acceptance or manual fallback.",
-            matchRequest: riderPayload,
+            matchRequest: customerPayload,
             nextAction: {
                 state: "searching_for_rider",
                 socketEvents: {
@@ -535,6 +578,12 @@ export const waitMoreForRider = async (
         const riderPayload = createMatchRequestResponse(
             matchRequest,
             nearbyRiders.length,
+            "rider",
+        );
+        const customerPayload = createMatchRequestResponse(
+            matchRequest,
+            nearbyRiders.length,
+            "customer",
         );
         await emitMatchRequestToRiders(matchRequest, nearbyRiders, riderPayload);
 
@@ -544,7 +593,7 @@ export const waitMoreForRider = async (
         res.status(200).json({
             success: true,
             message: "Rider search resumed",
-            matchRequest: riderPayload,
+            matchRequest: customerPayload,
         });
     } catch (error) {
         next(error);
@@ -626,8 +675,17 @@ export const createDeliveryManually = async (
         );
 
         if (nearbyRiders.length > 0) {
+            const riderDeliveryPayload = createMobileDeliveryResponse(
+                delivery,
+                nearbyRiders.length,
+                "rider",
+            );
             nearbyRiders.forEach((rider) => {
-                emitToRoom(`user-${rider._id}`, "incoming_delivery", delivery);
+                emitToRoom(
+                    `user-${rider._id}`,
+                    "incoming_delivery",
+                    riderDeliveryPayload,
+                );
             });
         }
 
@@ -777,11 +835,11 @@ export const getRiderHomeSummary = async (
                           return {
                               id: matchRequest._id,
                               status: matchRequest.status,
-                              pricing: {
-                                  fee: matchRequest.fee,
-                                  feeInNaira: matchRequest.fee,
-                                  currency: "NGN",
-                              },
+                              pricing: buildPricingForViewer(
+                                  matchRequest.distance || 0,
+                                  "rider",
+                                  matchRequest.fee,
+                              ),
                               route: {
                                   distanceKm: Number(
                                       (matchRequest.distance || 0).toFixed(2),
@@ -813,10 +871,11 @@ export const getRiderHomeSummary = async (
             id: delivery._id,
             trackingId: delivery.trackingId,
             status: delivery.status,
-            pricing: {
-                fee: delivery.fee,
-                currency: "NGN",
-            },
+            pricing: buildPricingForViewer(
+                delivery.distance || 0,
+                "rider",
+                delivery.fee,
+            ),
             route: {
                 pickup: delivery.pickupLocation,
                 dropoff: delivery.dropoffLocation,
@@ -968,7 +1027,11 @@ export const acceptDelivery = async (
                         success: true,
                         message:
                             "Delivery already created for this match request",
-                        delivery: existingDelivery,
+                        delivery: createMobileDeliveryResponse(
+                            existingDelivery,
+                            0,
+                            "rider",
+                        ),
                     });
                     return;
                 }
@@ -996,8 +1059,13 @@ export const acceptDelivery = async (
             await matchRequest.save();
 
             const riderDetails = await buildRiderPreview(riderId);
-            const payload = {
+            const customerDeliveryPayload = createMobileDeliveryResponse(
                 delivery,
+                0,
+                "customer",
+            );
+            const payload = {
+                delivery: customerDeliveryPayload,
                 rider: riderDetails,
                 matchRequestId: matchRequest._id,
             };
@@ -1017,7 +1085,7 @@ export const acceptDelivery = async (
             res.status(200).json({
                 success: true,
                 message: "Match request accepted and delivery created",
-                delivery,
+                delivery: createMobileDeliveryResponse(delivery, 0, "rider"),
                 rider: riderDetails,
             });
             return;
@@ -1043,7 +1111,10 @@ export const acceptDelivery = async (
         await delivery.save();
 
         const riderDetails = await buildRiderPreview(riderId);
-        const payload = { delivery, rider: riderDetails };
+        const payload = {
+            delivery: createMobileDeliveryResponse(delivery, 0, "customer"),
+            rider: riderDetails,
+        };
 
         emitToRoom(
             `customer-${delivery.customerId}`,
@@ -1054,7 +1125,7 @@ export const acceptDelivery = async (
         res.status(200).json({
             success: true,
             message: "Delivery accepted successfully",
-            delivery,
+            delivery: createMobileDeliveryResponse(delivery, 0, "rider"),
             rider: riderDetails,
         });
     } catch (error) {
@@ -1115,7 +1186,7 @@ export const assignRiderToDeliveryByAdmin = async (
 
         const riderDetails = await buildRiderPreview(riderId);
         const payload = {
-            delivery,
+            delivery: createMobileDeliveryResponse(delivery, 0, "rider"),
             rider: riderDetails,
             assignedBy: "admin",
             requiresAcceptance: true,
@@ -1202,6 +1273,8 @@ export const getMyDeliveries = async (
 ): Promise<void> => {
     try {
         const customerId = getUserId(req);
+        const viewer: DeliveryViewer =
+            req.user?.role === "rider" ? "rider" : "customer";
         if (!customerId) {
             res.status(401).json({ message: "Unauthorized" });
             return;
@@ -1228,10 +1301,11 @@ export const getMyDeliveries = async (
             id: delivery._id,
             trackingId: delivery.trackingId,
             status: delivery.status,
-            pricing: {
-                fee: delivery.fee,
-                currency: "NGN",
-            },
+            pricing: buildPricingForViewer(
+                delivery.distance || 0,
+                viewer,
+                delivery.fee,
+            ),
             route: {
                 distanceKm: Number((delivery.distance || 0).toFixed(2)),
                 pickup: delivery.pickupLocation,
@@ -1272,6 +1346,8 @@ export const getDeliveryById = async (
 ): Promise<void> => {
     try {
         const { id } = req.params;
+        const viewer: DeliveryViewer =
+            req.user?.role === "rider" ? "rider" : "customer";
 
         const query: any = { _id: id };
         if (mongoose.Types.ObjectId.isValid(id)) {
@@ -1294,10 +1370,11 @@ export const getDeliveryById = async (
                 id: delivery._id,
                 trackingId: delivery.trackingId,
                 status: delivery.status,
-                pricing: {
-                    fee: delivery.fee,
-                    currency: "NGN",
-                },
+                pricing: buildPricingForViewer(
+                    delivery.distance || 0,
+                    viewer,
+                    delivery.fee,
+                ),
                 route: {
                     distanceKm: Number((delivery.distance || 0).toFixed(2)),
                     pickup: delivery.pickupLocation,

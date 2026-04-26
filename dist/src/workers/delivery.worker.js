@@ -20,6 +20,8 @@ const delivery_match_request_model_1 = __importDefault(require("../models/delive
 const user_model_1 = __importDefault(require("../models/user.model"));
 const delivery_queue_1 = require("../queues/delivery.queue");
 const socket_service_1 = require("../services/socket.service");
+const PER_KM_FEE_NAIRA = 200;
+const getRiderDistanceFare = (distance) => Math.ceil((distance || 0) * PER_KM_FEE_NAIRA);
 /**
  * Handle the delivery worker logic
  */
@@ -36,7 +38,11 @@ const startDeliveryWorker = () => {
             const payload = {
                 id: matchRequest._id,
                 status: matchRequest.status,
-                pricing: { fee: matchRequest.fee, currency: "NGN" },
+                pricing: {
+                    fee: getRiderDistanceFare(matchRequest.distance || 0),
+                    distanceFare: getRiderDistanceFare(matchRequest.distance || 0),
+                    currency: "NGN",
+                },
                 route: {
                     distanceKm: Number((matchRequest.distance || 0).toFixed(2)),
                     pickup: matchRequest.pickupLocation,
@@ -137,7 +143,11 @@ const startDeliveryWorker = () => {
             }).select("_id");
             if (nearbyRiders.length > 0) {
                 nearbyRiders.forEach((rider) => {
-                    (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_delivery", delivery);
+                    (0, socket_service_1.emitToRoom)(`user-${rider._id}`, "incoming_delivery", Object.assign(Object.assign({}, delivery.toObject()), { pricing: {
+                            fee: getRiderDistanceFare(delivery.distance || 0),
+                            distanceFare: getRiderDistanceFare(delivery.distance || 0),
+                            currency: "NGN",
+                        } }));
                 });
                 (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "manual_delivery_riders_available", {
                     deliveryId: delivery._id,

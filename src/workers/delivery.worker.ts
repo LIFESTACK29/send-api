@@ -6,6 +6,11 @@ import User from "../models/user.model";
 import { addManualAssignmentCheckJob } from "../queues/delivery.queue";
 import { emitToRoom } from "../services/socket.service";
 
+const PER_KM_FEE_NAIRA = 200;
+
+const getRiderDistanceFare = (distance: number) =>
+    Math.ceil((distance || 0) * PER_KM_FEE_NAIRA);
+
 /**
  * Handle the delivery worker logic
  */
@@ -32,7 +37,13 @@ export const startDeliveryWorker = () => {
                 const payload = {
                     id: matchRequest._id,
                     status: matchRequest.status,
-                    pricing: { fee: matchRequest.fee, currency: "NGN" },
+                    pricing: {
+                        fee: getRiderDistanceFare(matchRequest.distance || 0),
+                        distanceFare: getRiderDistanceFare(
+                            matchRequest.distance || 0,
+                        ),
+                        currency: "NGN",
+                    },
                     route: {
                         distanceKm: Number(
                             (matchRequest.distance || 0).toFixed(2),
@@ -159,7 +170,18 @@ export const startDeliveryWorker = () => {
                         emitToRoom(
                             `user-${rider._id}`,
                             "incoming_delivery",
-                            delivery,
+                            {
+                                ...delivery.toObject(),
+                                pricing: {
+                                    fee: getRiderDistanceFare(
+                                        delivery.distance || 0,
+                                    ),
+                                    distanceFare: getRiderDistanceFare(
+                                        delivery.distance || 0,
+                                    ),
+                                    currency: "NGN",
+                                },
+                            },
                         );
                     });
                     emitToRoom(
