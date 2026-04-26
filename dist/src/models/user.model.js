@@ -110,6 +110,11 @@ const UserSchema = new mongoose_1.Schema({
     },
     profileImageUrl: { type: String },
     verificationNotes: { type: String },
+    walletProvisioningStatus: {
+        type: String,
+        enum: ["not_started", "creating", "active", "failed"],
+        default: "not_started",
+    },
 }, { timestamps: true });
 UserSchema.index({ currentLocation: "2dsphere" }, {
     partialFilterExpression: {

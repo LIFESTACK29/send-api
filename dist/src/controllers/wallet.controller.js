@@ -67,13 +67,14 @@ const maskAccountNumber = (accountNumber) => {
     const visibleDigits = accountNumber.slice(-4);
     return `${"*".repeat(accountNumber.length - 4)}${visibleDigits}`;
 };
+const hasDedicatedAccount = (wallet) => Boolean((wallet === null || wallet === void 0 ? void 0 : wallet.dedicatedAccountNumber) && (wallet === null || wallet === void 0 ? void 0 : wallet.dedicatedBankName));
 /**
  * @desc    Create wallet (customer gets DVA, rider/admin local wallet)
  * @route   POST /api/v1/wallet/create
  * @access  Private
  */
 const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a, _b, _c, _d;
     try {
         const userId = (0, auth_middleware_1.getUserId)(req);
         console.log(`[Wallet] Incoming creation request for user: ${userId}`);
@@ -86,9 +87,48 @@ const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
             res.status(404).json({ message: "User not found" });
             return;
         }
-        const wallet = yield (0, wallet_service_1.ensureWalletForUser)(userId);
-        // Customers should have DVA for funding. Riders/admins use local wallet only.
-        if (user.role === "customer" && !wallet.dedicatedAccountNumber) {
+        // Riders/admins use local wallet only.
+        if (user.role !== "customer") {
+            const wallet = yield (0, wallet_service_1.ensureWalletForUser)(userId);
+            user.walletProvisioningStatus = "active";
+            yield user.save();
+            res.status(201).json({
+                message: "Wallet created successfully",
+                walletStatus: "active",
+                wallet: {
+                    id: wallet._id,
+                    role: user.role,
+                    balance: wallet.balance,
+                    balanceInNaira: wallet.balance / 100,
+                    accountNumber: wallet.dedicatedAccountNumber,
+                    bankName: wallet.dedicatedBankName,
+                    accountName: wallet.dedicatedAccountName,
+                },
+            });
+            return;
+        }
+        let wallet = yield wallet_model_1.default.findOne({ userId });
+        if (wallet && hasDedicatedAccount(wallet)) {
+            user.walletProvisioningStatus = "active";
+            yield user.save();
+            res.status(200).json({
+                message: "Wallet already active",
+                walletStatus: "active",
+                wallet: {
+                    id: wallet._id,
+                    role: user.role,
+                    balance: wallet.balance,
+                    balanceInNaira: wallet.balance / 100,
+                    accountNumber: wallet.dedicatedAccountNumber,
+                    bankName: wallet.dedicatedBankName,
+                    accountName: wallet.dedicatedAccountName,
+                },
+            });
+            return;
+        }
+        user.walletProvisioningStatus = "creating";
+        yield user.save();
+        try {
             const assignResponse = yield paystackService.assignDedicatedVirtualAccount({
                 email: user.email,
                 first_name: user.firstName,
@@ -97,30 +137,54 @@ const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
                 preferred_bank: "test-bank",
             });
             const dedicatedAccount = assignResponse.data;
-            wallet.paystackCustomerCode =
-                dedicatedAccount.customer.customer_code ||
-                    wallet.paystackCustomerCode;
-            wallet.dedicatedAccountNumber = dedicatedAccount.account_number;
-            wallet.dedicatedBankName =
-                ((_a = dedicatedAccount.bank) === null || _a === void 0 ? void 0 : _a.name) || wallet.dedicatedBankName;
-            wallet.dedicatedAccountName = dedicatedAccount.account_name;
-            wallet.dedicatedAccountReference =
-                ((_b = dedicatedAccount.assignment) === null || _b === void 0 ? void 0 : _b.toString()) ||
-                    wallet.dedicatedAccountReference;
-            yield wallet.save();
+            if (!wallet) {
+                wallet = yield wallet_model_1.default.create({
+                    userId,
+                    paystackCustomerCode: dedicatedAccount.customer.customer_code,
+                    dedicatedAccountNumber: dedicatedAccount.account_number,
+                    dedicatedBankName: (_a = dedicatedAccount.bank) === null || _a === void 0 ? void 0 : _a.name,
+                    dedicatedAccountName: dedicatedAccount.account_name,
+                    dedicatedAccountReference: (_b = dedicatedAccount.assignment) === null || _b === void 0 ? void 0 : _b.toString(),
+                });
+            }
+            else {
+                wallet.paystackCustomerCode =
+                    dedicatedAccount.customer.customer_code ||
+                        wallet.paystackCustomerCode;
+                wallet.dedicatedAccountNumber = dedicatedAccount.account_number;
+                wallet.dedicatedBankName = (_c = dedicatedAccount.bank) === null || _c === void 0 ? void 0 : _c.name;
+                wallet.dedicatedAccountName = dedicatedAccount.account_name;
+                wallet.dedicatedAccountReference =
+                    ((_d = dedicatedAccount.assignment) === null || _d === void 0 ? void 0 : _d.toString()) ||
+                        wallet.dedicatedAccountReference;
+                yield wallet.save();
+            }
+            user.walletProvisioningStatus = "active";
+            yield user.save();
+            res.status(201).json({
+                message: "Wallet created successfully",
+                walletStatus: "active",
+                wallet: {
+                    id: wallet._id,
+                    role: user.role,
+                    balance: wallet.balance,
+                    balanceInNaira: wallet.balance / 100,
+                    accountNumber: wallet.dedicatedAccountNumber,
+                    bankName: wallet.dedicatedBankName,
+                    accountName: wallet.dedicatedAccountName,
+                },
+            });
+            return;
         }
-        res.status(201).json({
-            message: "Wallet created successfully",
-            wallet: {
-                id: wallet._id,
-                role: user.role,
-                balance: wallet.balance,
-                balanceInNaira: wallet.balance / 100,
-                accountNumber: wallet.dedicatedAccountNumber,
-                bankName: wallet.dedicatedBankName,
-                accountName: wallet.dedicatedAccountName,
-            },
-        });
+        catch (dvaError) {
+            user.walletProvisioningStatus = "creating";
+            yield user.save();
+            res.status(202).json({
+                message: "Wallet is still being created. Please check again shortly.",
+                walletStatus: "creating",
+            });
+            return;
+        }
     }
     catch (error) {
         next(error);
@@ -139,7 +203,22 @@ const getWalletBalance = (req, res, next) => __awaiter(void 0, void 0, void 0, f
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        const wallet = yield wallet_model_1.default.findOne({ userId });
+        const [user, wallet] = yield Promise.all([
+            user_model_1.default.findById(userId).select("role walletProvisioningStatus"),
+            wallet_model_1.default.findOne({ userId }),
+        ]);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+        if (user.role === "customer" &&
+            (!wallet || !hasDedicatedAccount(wallet))) {
+            res.status(202).json({
+                message: "Wallet is still being created. Please check again shortly.",
+                walletStatus: "creating",
+            });
+            return;
+        }
         if (!wallet) {
             res.status(404).json({
                 message: "Wallet not found. Please create a wallet first.",
@@ -168,14 +247,54 @@ exports.getWalletBalance = getWalletBalance;
  * @access  Private
  */
 const getWalletStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b;
     try {
         const userId = (0, auth_middleware_1.getUserId)(req);
         if (!userId) {
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        const wallet = yield wallet_model_1.default.findOne({ userId });
+        const [user, wallet] = yield Promise.all([
+            user_model_1.default.findById(userId).select("role walletProvisioningStatus"),
+            wallet_model_1.default.findOne({ userId }),
+        ]);
+        if (!user) {
+            res.status(404).json({ message: "User not found" });
+            return;
+        }
+        if (user.role === "customer") {
+            if (!wallet || !hasDedicatedAccount(wallet)) {
+                const provisioningState = user.walletProvisioningStatus === "failed"
+                    ? "failed"
+                    : user.walletProvisioningStatus === "creating"
+                        ? "creating"
+                        : "not_created";
+                res.status(200).json({
+                    hasWallet: false,
+                    walletStatus: provisioningState,
+                    cta: provisioningState === "creating"
+                        ? "wait_wallet_creation"
+                        : "create_wallet",
+                });
+                return;
+            }
+            res.status(200).json({
+                hasWallet: true,
+                walletStatus: "active",
+                wallet: {
+                    id: wallet._id,
+                    balance: wallet.balance,
+                    balanceInNaira: wallet.balance / 100,
+                    accountPreview: {
+                        maskedAccountNumber: maskAccountNumber(wallet.dedicatedAccountNumber),
+                        last4: ((_a = wallet.dedicatedAccountNumber) === null || _a === void 0 ? void 0 : _a.slice(-4)) || "",
+                        bankName: wallet.dedicatedBankName || "",
+                        accountName: wallet.dedicatedAccountName || "",
+                    },
+                },
+            });
+            return;
+        }
         if (!wallet) {
             res.status(200).json({
                 hasWallet: false,
@@ -193,7 +312,7 @@ const getWalletStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 balanceInNaira: wallet.balance / 100,
                 accountPreview: {
                     maskedAccountNumber: maskAccountNumber(wallet.dedicatedAccountNumber),
-                    last4: ((_a = wallet.dedicatedAccountNumber) === null || _a === void 0 ? void 0 : _a.slice(-4)) || "",
+                    last4: ((_b = wallet.dedicatedAccountNumber) === null || _b === void 0 ? void 0 : _b.slice(-4)) || "",
                     bankName: wallet.dedicatedBankName || "",
                     accountName: wallet.dedicatedAccountName || "",
                 },
@@ -389,7 +508,6 @@ const handleAccountAssignSuccess = (event, data) => __awaiter(void 0, void 0, vo
     // High reliability check: Find or create wallet
     let wallet = yield wallet_model_1.default.findOne({ paystackCustomerCode: customer.customer_code });
     if (!wallet) {
-        // Fallback: Find user by email if wallet doesn't exist yet
         const user = yield user_model_1.default.findOne({ email: customer.email });
         if (user) {
             wallet = yield wallet_model_1.default.create({
@@ -412,6 +530,9 @@ const handleAccountAssignSuccess = (event, data) => __awaiter(void 0, void 0, vo
         wallet.dedicatedAccountName = dedicated_account.account_name;
         yield wallet.save();
     }
+    yield user_model_1.default.findByIdAndUpdate(wallet.userId, {
+        walletProvisioningStatus: "active",
+    });
     // Broadcast to user room via Socket.io
     (0, socket_service_1.emitToRoom)(`user-${wallet.userId}`, "wallet_created", {
         message: "Your wallet has been created successfully!",
@@ -439,6 +560,7 @@ const handleAccountAssignSuccess = (event, data) => __awaiter(void 0, void 0, vo
  */
 const handleAccountAssignFailed = (data) => __awaiter(void 0, void 0, void 0, function* () {
     console.error(`[Webhook] DVA assignment failed for ${data.customer.email}`);
+    yield user_model_1.default.findOneAndUpdate({ email: data.customer.email }, { walletProvisioningStatus: "failed" });
 });
 /**
  * @desc    List banks for withdrawal

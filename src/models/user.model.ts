@@ -43,6 +43,7 @@ export interface IUser extends Document {
     verificationStatus?: "not_submitted" | "pending" | "approved" | "rejected";
     profileImageUrl?: string;
     verificationNotes?: string;
+    walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -111,6 +112,11 @@ const UserSchema: Schema = new Schema(
         },
         profileImageUrl: { type: String },
         verificationNotes: { type: String },
+        walletProvisioningStatus: {
+            type: String,
+            enum: ["not_started", "creating", "active", "failed"],
+            default: "not_started",
+        },
     },
     { timestamps: true },
 );
