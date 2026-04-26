@@ -4,6 +4,7 @@ import Delivery from "../models/delivery.model";
 import DeliveryMatchRequest from "../models/delivery-match-request.model";
 import User from "../models/user.model";
 import Vehicle from "../models/vehicle.model";
+import Wallet from "../models/wallet.model";
 import { ensureWalletForUser } from "../services/wallet.service";
 import { emitToRoom, emitToRiders } from "../services/socket.service";
 import {
@@ -468,6 +469,39 @@ export const requestDelivery = async (
         const calculatedFee = Math.ceil(
             BASE_FEE_NAIRA + distance * PER_KM_FEE_NAIRA,
         );
+
+        // Enforce wallet balance before allowing order request to proceed.
+        const customerWallet = await Wallet.findOne({ userId: customerId });
+        if (!customerWallet) {
+            res.status(400).json({
+                success: false,
+                message:
+                    "Wallet not found. Please create and fund your wallet before requesting a delivery.",
+                code: "WALLET_NOT_FOUND",
+            });
+            return;
+        }
+
+        const requiredAmountInKobo = Math.round(calculatedFee * 100);
+        if (customerWallet.balance < requiredAmountInKobo) {
+            const shortfallInKobo = requiredAmountInKobo - customerWallet.balance;
+            res.status(400).json({
+                success: false,
+                message:
+                    "Insufficient wallet balance for this delivery request.",
+                code: "INSUFFICIENT_WALLET_BALANCE",
+                data: {
+                    requiredAmount: requiredAmountInKobo,
+                    requiredAmountInNaira: calculatedFee,
+                    currentBalance: customerWallet.balance,
+                    currentBalanceInNaira: customerWallet.balance / 100,
+                    shortfall: shortfallInKobo,
+                    shortfallInNaira: shortfallInKobo / 100,
+                },
+            });
+            return;
+        }
+
         const itemImage = await uploadToStorage(req.file, "deliveries");
 
         const matchRequest = await DeliveryMatchRequest.create({

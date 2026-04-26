@@ -18,6 +18,7 @@ const delivery_model_1 = __importDefault(require("../models/delivery.model"));
 const delivery_match_request_model_1 = __importDefault(require("../models/delivery-match-request.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
+const wallet_model_1 = __importDefault(require("../models/wallet.model"));
 const wallet_service_1 = require("../services/wallet.service");
 const socket_service_1 = require("../services/socket.service");
 const delivery_queue_1 = require("../queues/delivery.queue");
@@ -354,6 +355,34 @@ const requestDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         }
         const distance = getDistance(pickupLocation.lat, pickupLocation.lng, dropoffLocation.lat, dropoffLocation.lng);
         const calculatedFee = Math.ceil(BASE_FEE_NAIRA + distance * PER_KM_FEE_NAIRA);
+        // Enforce wallet balance before allowing order request to proceed.
+        const customerWallet = yield wallet_model_1.default.findOne({ userId: customerId });
+        if (!customerWallet) {
+            res.status(400).json({
+                success: false,
+                message: "Wallet not found. Please create and fund your wallet before requesting a delivery.",
+                code: "WALLET_NOT_FOUND",
+            });
+            return;
+        }
+        const requiredAmountInKobo = Math.round(calculatedFee * 100);
+        if (customerWallet.balance < requiredAmountInKobo) {
+            const shortfallInKobo = requiredAmountInKobo - customerWallet.balance;
+            res.status(400).json({
+                success: false,
+                message: "Insufficient wallet balance for this delivery request.",
+                code: "INSUFFICIENT_WALLET_BALANCE",
+                data: {
+                    requiredAmount: requiredAmountInKobo,
+                    requiredAmountInNaira: calculatedFee,
+                    currentBalance: customerWallet.balance,
+                    currentBalanceInNaira: customerWallet.balance / 100,
+                    shortfall: shortfallInKobo,
+                    shortfallInNaira: shortfallInKobo / 100,
+                },
+            });
+            return;
+        }
         const itemImage = yield (0, upload_middleware_1.uploadToStorage)(req.file, "deliveries");
         const matchRequest = yield delivery_match_request_model_1.default.create({
             customerId,
