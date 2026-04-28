@@ -33,8 +33,6 @@ export const initSocket = (server: HttpServer) => {
         const userId = socket.data.user?.userId;
         const role = socket.data.user?.role;
 
-        console.log(`📡 New connection: ${socket.id} (User: ${userId}, Role: ${role})`);
-
         // Join user-specific room
         if (userId) {
             socket.join(`user-${userId}`);
@@ -47,7 +45,7 @@ export const initSocket = (server: HttpServer) => {
             // If they are a rider, join the riders pool
             if (role === "rider") {
                 socket.join("riders-pool");
-                console.log(`🚴 Rider ${userId} joined the riders-pool`);
+          
 
                 // Set rider as online when they connect
                 User.findByIdAndUpdate(userId, { isOnline: true }).catch(err =>
@@ -69,7 +67,7 @@ export const initSocket = (server: HttpServer) => {
                             lastLocationUpdate: new Date(),
                         }, { new: true });
 
-                        console.log(`📍 Location updated for rider ${userId}: ${data.lat}, ${data.lng}`);
+             
 
                         // BROADCAST to all customers in the discovery pool
                         io.to("rider-discovery").emit("rider_location_update", {
@@ -86,7 +84,7 @@ export const initSocket = (server: HttpServer) => {
                 socket.on("toggle_online", async (data: { isOnline: boolean }) => {
                     try {
                         await User.findByIdAndUpdate(userId, { isOnline: data.isOnline });
-                        console.log(`🔄 Status for rider ${userId} set to: ${data.isOnline ? "ONLINE" : "OFFLINE"}`);
+                 
 
                         // If they go offline, notify discovery pool to remove them
                         if (!data.isOnline) {
@@ -102,7 +100,6 @@ export const initSocket = (server: HttpServer) => {
             if (role === "customer") {
                 socket.on("join_discovery", () => {
                     socket.join("rider-discovery");
-                    console.log(`🔍 Customer ${userId} joined rider-discovery`);
 
                     // Immediately send current online riders to the new joiner
                     User.find({

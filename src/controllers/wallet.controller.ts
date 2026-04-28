@@ -43,7 +43,7 @@ export const createWallet = async (
 ): Promise<void> => {
     try {
         const userId = getUserId(req);
-        console.log(`[Wallet] Incoming creation request for user: ${userId}`);
+     
         if (!userId) {
             res.status(401).json({ message: "Unauthorized" });
             return;
@@ -427,7 +427,7 @@ export const handleWebhook = async (
                 break;
 
             default:
-                console.log(`[Webhook] Unhandled event: ${event}`);
+           
         }
 
         res.status(200).json({ message: "Webhook received" });
