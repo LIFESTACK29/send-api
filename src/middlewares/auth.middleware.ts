@@ -1,15 +1,12 @@
 import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { AuthRequest, AuthPayload } from "../types/user.type";
+import { isTokenDenied } from "../utils/token-denylist.util";
 import {
     getUserAccessState,
     syncUserOnboardingState,
 } from "../services/onboarding.service";
 
-/**
- * Authenticate middleware — verifies JWT from Authorization header
- * and attaches user payload to req.user
- */
 export const authenticate = (
     req: AuthRequest,
     res: Response,
@@ -29,22 +26,25 @@ export const authenticate = (
             process.env.JWT_SECRET as string,
         ) as AuthPayload;
 
+        // Reject tokens that have been explicitly revoked via logout
+        if (decoded.jti && isTokenDenied(decoded.jti)) {
+            res.status(401).json({ message: "Unauthorized — session has been revoked" });
+            return;
+        }
+
         req.user = {
             userId: decoded.userId,
             role: decoded.role,
+            jti: decoded.jti,
+            exp: decoded.exp,
         };
 
         next();
     } catch (error) {
         res.status(401).json({ message: "Unauthorized — invalid token" });
-        return;
     }
 };
 
-/**
- * Authorize middleware — restricts access to specific roles.
- * Must be used AFTER authenticate.
- */
 export const authorize = (...roles: string[]) => {
     return (req: AuthRequest, res: Response, next: NextFunction): void => {
         if (!req.user) {
@@ -61,10 +61,6 @@ export const authorize = (...roles: string[]) => {
     };
 };
 
-/**
- * Authorize middleware — ensures a user can only access their own :userId routes
- * unless they are an admin.
- */
 export const authorizeSelfOrAdmin = (paramName = "userId") => {
     return (req: AuthRequest, res: Response, next: NextFunction): void => {
         if (!req.user) {
@@ -91,10 +87,6 @@ export const authorizeSelfOrAdmin = (paramName = "userId") => {
     };
 };
 
-/**
- * Blocks rider-only "home" APIs until rider onboarding is complete.
- * Customers/admin users are unaffected.
- */
 export const requireActiveRiderAccess = async (
     req: AuthRequest,
     res: Response,
@@ -142,9 +134,6 @@ export const requireActiveRiderAccess = async (
     }
 };
 
-/**
- * Helper to get the authenticated user's MongoDB _id from the request.
- */
 export const getUserId = (req: AuthRequest): string | null => {
     return req.user?.userId || null;
 };

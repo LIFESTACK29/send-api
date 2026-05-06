@@ -207,10 +207,17 @@ const createMatchRequestResponse = (
         pickup: matchRequest.pickupLocation,
         dropoff: matchRequest.dropoffLocation,
     },
-    contact: {
-        customer: matchRequest.customer,
-        receiver: matchRequest.receiver,
-    },
+    // Before acceptance riders only see names — phone/email withheld until delivery is created
+    contact:
+        viewer === "rider"
+            ? {
+                  customer: { fullName: matchRequest.customer?.fullName },
+                  receiver: { fullName: matchRequest.receiver?.fullName },
+              }
+            : {
+                  customer: matchRequest.customer,
+                  receiver: matchRequest.receiver,
+              },
     package: {
         type: matchRequest.packageType,
         note: matchRequest.deliveryNote || "",
@@ -1029,29 +1036,35 @@ export const acceptDelivery = async (
             return;
         }
 
+        // Only fully approved riders may accept deliveries
+        const riderUser = await User.findOne({
+            _id: riderId,
+            role: "rider",
+            riderStatus: "active",
+        }).select("_id");
+        if (!riderUser) {
+            res.status(403).json({
+                message: "Only active riders can accept deliveries",
+            });
+            return;
+        }
+
         const { id } = req.params;
 
-        const matchRequest = await DeliveryMatchRequest.findById(id);
+        // ── Path 1: match-request flow ──────────────────────────────────────
+        // Atomically claim the match request — only one rider wins the race
+        const matchRequest = await DeliveryMatchRequest.findOneAndUpdate(
+            {
+                _id: id,
+                status: { $in: ["SEARCHING", "NO_RIDER_FOUND"] },
+                matchedRiderId: null,
+            },
+            { $set: { status: "RIDER_ASSIGNED", matchedRiderId: riderId } },
+            { new: true },
+        );
+
         if (matchRequest) {
-            if (
-                !["SEARCHING", "NO_RIDER_FOUND"].includes(matchRequest.status)
-            ) {
-                res.status(400).json({
-                    message: "Match request is no longer available",
-                });
-                return;
-            }
-
-            if (
-                matchRequest.matchedRiderId &&
-                String(matchRequest.matchedRiderId) !== String(riderId)
-            ) {
-                res.status(409).json({
-                    message: "Another rider already accepted this request",
-                });
-                return;
-            }
-
+            // Check for idempotent retry: delivery already created for this match
             if (matchRequest.createdDeliveryId) {
                 const existingDelivery = await Delivery.findById(
                     matchRequest.createdDeliveryId,
@@ -1059,8 +1072,7 @@ export const acceptDelivery = async (
                 if (existingDelivery) {
                     res.status(200).json({
                         success: true,
-                        message:
-                            "Delivery already created for this match request",
+                        message: "Delivery already created for this match request",
                         delivery: createMobileDeliveryResponse(
                             existingDelivery,
                             0,
@@ -1087,22 +1099,12 @@ export const acceptDelivery = async (
                 riderId,
             });
 
-            matchRequest.status = "RIDER_ASSIGNED";
-            matchRequest.matchedRiderId = riderId;
-            matchRequest.createdDeliveryId = String(delivery._id);
-            await matchRequest.save();
+            // Record the created delivery on the match request
+            await DeliveryMatchRequest.findByIdAndUpdate(id, {
+                createdDeliveryId: String(delivery._id),
+            });
 
             const riderDetails = await buildRiderPreview(riderId);
-            const customerDeliveryPayload = createMobileDeliveryResponse(
-                delivery,
-                0,
-                "customer",
-            );
-            const payload = {
-                delivery: customerDeliveryPayload,
-                rider: riderDetails,
-                matchRequestId: matchRequest._id,
-            };
 
             emitToRiders("match_request_taken", {
                 matchRequestId: matchRequest._id,
@@ -1110,11 +1112,11 @@ export const acceptDelivery = async (
                 deliveryId: delivery._id,
             });
 
-            emitToRoom(
-                `customer-${delivery.customerId}`,
-                "delivery_accepted",
-                payload,
-            );
+            emitToRoom(`customer-${delivery.customerId}`, "delivery_accepted", {
+                delivery: createMobileDeliveryResponse(delivery, 0, "customer"),
+                rider: riderDetails,
+                matchRequestId: matchRequest._id,
+            });
 
             res.status(200).json({
                 success: true,
@@ -1125,36 +1127,52 @@ export const acceptDelivery = async (
             return;
         }
 
-        const delivery = await Delivery.findById(id);
+        // Check if this rider already won a previous race for this match request
+        // (idempotent retry after network failure)
+        const alreadyClaimed = await DeliveryMatchRequest.findOne({
+            _id: id,
+            matchedRiderId: riderId,
+        });
+        if (alreadyClaimed?.createdDeliveryId) {
+            const existingDelivery = await Delivery.findById(
+                alreadyClaimed.createdDeliveryId,
+            );
+            if (existingDelivery) {
+                res.status(200).json({
+                    success: true,
+                    message: "Delivery already created for this match request",
+                    delivery: createMobileDeliveryResponse(
+                        existingDelivery,
+                        0,
+                        "rider",
+                    ),
+                });
+                return;
+            }
+        }
+
+        // ── Path 2: PENDING delivery (admin/manual flow) ────────────────────
+        // Any active rider may accept an unassigned PENDING delivery.
+        // Atomic update prevents double-acceptance.
+        const delivery = await Delivery.findOneAndUpdate(
+            { _id: id, status: "PENDING" },
+            { $set: { status: "ONGOING", riderId } },
+            { new: true },
+        );
+
         if (!delivery) {
             res.status(404).json({
-                message: "Delivery or match request not found",
+                message: "Delivery not found or no longer available",
             });
             return;
         }
-
-        if (delivery.status !== "PENDING") {
-            res.status(400).json({
-                message: "Delivery is no longer available/pending",
-            });
-            return;
-        }
-
-        delivery.status = "ONGOING";
-        delivery.riderId = riderId;
-        await delivery.save();
 
         const riderDetails = await buildRiderPreview(riderId);
-        const payload = {
+
+        emitToRoom(`customer-${delivery.customerId}`, "delivery_accepted", {
             delivery: createMobileDeliveryResponse(delivery, 0, "customer"),
             rider: riderDetails,
-        };
-
-        emitToRoom(
-            `customer-${delivery.customerId}`,
-            "delivery_accepted",
-            payload,
-        );
+        });
 
         res.status(200).json({
             success: true,

@@ -17,7 +17,7 @@ import {
     declineMatchRequest,
     getRiderHomeSummary,
 } from "../controllers/delivery.controller";
-import { upload } from "../middlewares/upload.middleware";
+import { upload, validateFileType } from "../middlewares/upload.middleware";
 
 const router = Router();
 
@@ -28,7 +28,7 @@ router.get("/rider/home", getRiderHomeSummary);
 router.get("/nearby-riders", getNearbyRiders);
 router.get("/my-deliveries", getMyDeliveries);
 router.post("/calculate-fee", calculateDeliveryFee);
-router.post("/request", upload.single("itemImage"), requestDelivery);
+router.post("/request", upload.single("itemImage"), validateFileType, requestDelivery);
 router.post("/match-requests/:id/decline", declineMatchRequest);
 router.post("/match-requests/:id/wait-more", waitMoreForRider);
 router.post("/match-requests/:id/create-manual", createDeliveryManually);

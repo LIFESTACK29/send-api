@@ -1,52 +1,63 @@
 import { Request, Response, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import User from "../models/user.model";
 import Otp from "../models/otp.model";
 import { sendOtpEmail } from "../services/email.service";
 import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
+import { generateJti, denyToken } from "../utils/token-denylist.util";
 import {
     getUserAccessState,
     syncUserOnboardingState,
 } from "../services/onboarding.service";
 
-/**
- * Generate a random 6-digit OTP code
- */
-const generateOtpCode = (): string => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Create OTP, save to DB, and send via email
- */
+const generateOtpCode = (): string =>
+    Math.floor(100000 + Math.random() * 900000).toString();
+
+const hashOtp = (code: string): string =>
+    crypto.createHash("sha256").update(code).digest("hex");
+
+const MAX_OTP_ATTEMPTS = 5;
+
 const createAndSendOtp = async (
     userId: string,
     email: string,
 ): Promise<void> => {
-    // Remove any existing OTPs for this user
     await Otp.deleteMany({ userId });
 
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    await Otp.create({ userId, code, expiresAt });
+    // Store hashed code — plain code only lives in the email
+    await Otp.create({ userId, code: hashOtp(code), expiresAt });
     await sendOtpEmail(email, code);
 };
 
-/**
- * Sign a JWT token
- */
 const signToken = (userId: string, role: string): string => {
-    return jwt.sign({ userId, role }, process.env.JWT_SECRET as string, {
-        expiresIn: "7d",
-    });
+    const jti = generateJti();
+    return jwt.sign(
+        { userId, role, jti },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "7d" },
+    );
+};
+
+const validatePasswordStrength = (password: string): string | null => {
+    if (password.length < 8)
+        return "Password must be at least 8 characters";
+    if (!/[A-Z]/.test(password))
+        return "Password must contain at least one uppercase letter";
+    if (!/[0-9]/.test(password))
+        return "Password must contain at least one number";
+    return null;
 };
 
 const buildUserResponse = async (user: any) => {
     const accessState = await getUserAccessState(user);
-
     return {
         id: user._id,
         firstName: user.firstName,
@@ -64,39 +75,33 @@ const buildUserResponse = async (user: any) => {
     };
 };
 
-/**
- * @desc    Register a new user
- * @route   POST /api/v1/auth/register
- * @access  Public
- */
+// ─── Register ─────────────────────────────────────────────────────────────────
+
 export const register: RequestHandler = async (req: Request, res: Response) => {
     try {
         const { firstName, lastName, email, phoneNumber, password, role } =
             req.body;
 
-        if (
-            !firstName ||
-            !lastName ||
-            !email ||
-            !phoneNumber ||
-            !password ||
-            !role
-        ) {
+        if (!firstName || !lastName || !email || !phoneNumber || !password || !role) {
             res.status(400).json({ message: "All fields are required" });
             return;
         }
 
-        // Check if role is valid
-        if (!["customer", "rider", "admin"].includes(role)) {
+        // admin accounts are never created via public registration
+        if (!["customer", "rider"].includes(role)) {
             res.status(400).json({ message: "Invalid role" });
             return;
         }
 
-        // Check if user already exists
+        const passwordError = validatePasswordStrength(password);
+        if (passwordError) {
+            res.status(400).json({ message: passwordError });
+            return;
+        }
+
         const existingUser = await User.findOne({ email });
 
         if (existingUser) {
-            // If user exists but hasn't onboarded, resend OTP
             if (!existingUser.isOnboarded) {
                 await createAndSendOtp(
                     existingUser._id.toString(),
@@ -109,12 +114,10 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
                 });
                 return;
             }
-
             res.status(409).json({ message: "User already exists" });
             return;
         }
 
-        // Create user
         const user = await User.create({
             firstName,
             lastName,
@@ -127,7 +130,6 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
             verificationStatus: "not_submitted",
         });
 
-        // Generate and send OTP
         await createAndSendOtp(user._id.toString(), user.email);
 
         res.status(201).json({
@@ -142,11 +144,8 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
     }
 };
 
-/**
- * @desc    Verify OTP code
- * @route   POST /api/v1/auth/verify-otp
- * @access  Public
- */
+// ─── Verify OTP ───────────────────────────────────────────────────────────────
+
 export const verifyOtp: RequestHandler = async (
     req: Request,
     res: Response,
@@ -161,10 +160,9 @@ export const verifyOtp: RequestHandler = async (
             return;
         }
 
-        // Find valid OTP
+        // Find OTP by userId first so we can track attempts
         const otp = await Otp.findOne({
             userId,
-            code,
             expiresAt: { $gt: new Date() },
         });
 
@@ -173,7 +171,22 @@ export const verifyOtp: RequestHandler = async (
             return;
         }
 
-        // Mark user as onboarded
+        if (otp.attempts >= MAX_OTP_ATTEMPTS) {
+            await Otp.deleteMany({ userId });
+            res.status(400).json({
+                message:
+                    "Too many failed attempts. Please request a new OTP.",
+            });
+            return;
+        }
+
+        if (otp.code !== hashOtp(code)) {
+            otp.attempts = (otp.attempts || 0) + 1;
+            await otp.save();
+            res.status(400).json({ message: "Invalid or expired OTP" });
+            return;
+        }
+
         const user = await User.findByIdAndUpdate(
             userId,
             { isOnboarded: true },
@@ -191,10 +204,8 @@ export const verifyOtp: RequestHandler = async (
             return;
         }
 
-        // Clean up used OTP
         await Otp.deleteMany({ userId });
 
-        // Generate JWT
         const token = signToken(user._id.toString(), user.role);
 
         res.status(200).json({
@@ -209,11 +220,8 @@ export const verifyOtp: RequestHandler = async (
     }
 };
 
-/**
- * @desc    Resend OTP code
- * @route   POST /api/v1/auth/resend-otp
- * @access  Public
- */
+// ─── Resend OTP ───────────────────────────────────────────────────────────────
+
 export const resendOtp: RequestHandler = async (
     req: Request,
     res: Response,
@@ -226,22 +234,15 @@ export const resendOtp: RequestHandler = async (
             return;
         }
 
+        // Always return the same response — never reveal whether the email exists
         const user = await User.findOne({ email });
-
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
+        if (user && !user.isOnboarded) {
+            await createAndSendOtp(user._id.toString(), user.email);
         }
-
-        if (user.isOnboarded) {
-            res.status(400).json({ message: "User is already verified" });
-            return;
-        }
-
-        await createAndSendOtp(user._id.toString(), user.email);
 
         res.status(200).json({
-            message: "OTP resent to your email",
+            message:
+                "If your email is registered and pending verification, a new OTP has been sent.",
         });
     } catch (error: any) {
         console.error("Error in resendOtp:", error);
@@ -249,22 +250,16 @@ export const resendOtp: RequestHandler = async (
     }
 };
 
-/**
- * @desc    Login user
- * @route   POST /api/v1/auth/login
- * @access  Public
- */
+// ─── Login ────────────────────────────────────────────────────────────────────
+
 export const login: RequestHandler = async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
         if (!email || !password) {
-            res.status(400).json({
-                message: "Email and password are required",
-            });
+            res.status(400).json({ message: "Email and password are required" });
             return;
         }
 
-        // Find user with password field included
         const user = await User.findOne({ email }).select("+password");
 
         if (!user) {
@@ -272,18 +267,14 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
             return;
         }
 
-        // Check password
         const isMatch = await user.comparePassword(password);
-
         if (!isMatch) {
             res.status(401).json({ message: "Invalid email or password" });
             return;
         }
 
-        // If not onboarded, send OTP and inform client
         if (!user.isOnboarded) {
             await createAndSendOtp(user._id.toString(), user.email);
-
             res.status(200).json({
                 message: "Please verify your email. OTP has been sent.",
                 isOnboarded: false,
@@ -300,7 +291,6 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
             return;
         }
 
-        // Generate JWT
         const token = signToken(user._id.toString(), user.role);
         const userResponse = await buildUserResponse(user);
 
@@ -318,11 +308,8 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
     }
 };
 
-/**
- * @desc    Login admin user
- * @route   POST /api/v1/auth/admin/login
- * @access  Public
- */
+// ─── Admin Login ──────────────────────────────────────────────────────────────
+
 export const adminLogin: RequestHandler = async (
     req: Request,
     res: Response,
@@ -330,9 +317,7 @@ export const adminLogin: RequestHandler = async (
     try {
         const { email, password } = req.body;
         if (!email || !password) {
-            res.status(400).json({
-                message: "Email and password are required",
-            });
+            res.status(400).json({ message: "Email and password are required" });
             return;
         }
 
@@ -386,11 +371,29 @@ export const adminLogin: RequestHandler = async (
     }
 };
 
-/**
- * @desc    Get current user profile
- * @route   GET /api/v1/auth/me
- * @access  Private
- */
+// ─── Logout ───────────────────────────────────────────────────────────────────
+
+export const logout: RequestHandler = async (
+    req: AuthRequest,
+    res: Response,
+) => {
+    try {
+        const jti = req.user?.jti;
+        const exp = req.user?.exp;
+
+        if (jti && exp) {
+            denyToken(jti, exp);
+        }
+
+        res.status(200).json({ message: "Logged out successfully" });
+    } catch (error: any) {
+        console.error("Error in logout:", error);
+        res.status(200).json({ message: "Logged out successfully" });
+    }
+};
+
+// ─── Get current user ─────────────────────────────────────────────────────────
+
 export const getMe: RequestHandler = async (
     req: AuthRequest,
     res: Response,
@@ -403,54 +406,38 @@ export const getMe: RequestHandler = async (
             return;
         }
 
-        res.status(200).json({
-            user: await buildUserResponse(user),
-        });
+        res.status(200).json({ user: await buildUserResponse(user) });
     } catch (error: any) {
         console.error("Error in getMe:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
 
-/**
- * @desc    Upload profile image (for riders during onboarding)
- * @route   POST /api/v1/auth/upload-profile-image
- * @access  Private
- */
+// ─── Upload profile image ─────────────────────────────────────────────────────
+
 export const uploadProfileImage: RequestHandler = CatchAsync(
     async (req: AuthRequest, res: Response) => {
         if (!req.file) {
-            res.status(400).json({
-                success: false,
-                message: "No image file provided",
-            });
+            res.status(400).json({ success: false, message: "No image file provided" });
             return;
         }
 
         const userId = req.user?.userId;
         if (!userId) {
-            res.status(401).json({
-                success: false,
-                message: "Unauthorized",
-            });
+            res.status(401).json({ success: false, message: "Unauthorized" });
             return;
         }
 
-        // Upload to S3
-        const imageUrl = await uploadToStorage(req.file, `profiles/${userId}`);
+        const imageKey = await uploadToStorage(req.file, `profiles/${userId}`);
 
-        // Update user profile
         const user = await User.findByIdAndUpdate(
             userId,
-            { profileImageUrl: imageUrl },
+            { profileImageUrl: imageKey },
             { new: true },
         );
 
         if (!user) {
-            res.status(404).json({
-                success: false,
-                message: "User not found",
-            });
+            res.status(404).json({ success: false, message: "User not found" });
             return;
         }
 
@@ -462,10 +449,7 @@ export const uploadProfileImage: RequestHandler = CatchAsync(
         res.status(200).json({
             success: true,
             message: "Profile image uploaded successfully",
-            data: {
-                profileImageUrl: imageUrl,
-                accessState,
-            },
+            data: { profileImageUrl: imageKey, accessState },
         });
     },
 );

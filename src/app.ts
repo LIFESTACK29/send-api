@@ -1,7 +1,7 @@
 import express from "express";
+import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
 import indexRoute from "./routes/index.route";
 import authRoute from "./routes/auth.route";
 import userRoute from "./routes/user.route";
@@ -12,14 +12,25 @@ import onboardingRoute from "./routes/onboarding.route";
 import adminRoute from "./routes/admin.route";
 import errorMiddleware from "./middlewares/error.middleware";
 
-dotenv.config();
-
 const app = express();
 
-// Middleware
+// Security headers
+app.use(helmet());
+
+// CORS — restrict to explicitly listed origins; set ALLOWED_ORIGINS in .env
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+    : [];
+
 app.use(
     cors({
-        origin: "*",
+        origin: (origin, callback) => {
+            // Allow requests with no origin (mobile apps, curl, Postman in dev)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.includes(origin)) return callback(null, true);
+            callback(new Error(`CORS: origin '${origin}' not allowed`));
+        },
+        credentials: true,
     }),
 );
 app.use(express.json());

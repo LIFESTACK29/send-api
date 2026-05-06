@@ -1,5 +1,4 @@
-import dotenv from "dotenv";
-dotenv.config();
+import "./src/config/env"; // must be first — validates all required env vars before anything else loads
 
 import { createServer } from "http";
 import app from "./src/app";

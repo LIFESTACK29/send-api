@@ -11,13 +11,19 @@ const errorMiddleware = (
     _next: NextFunction,
 ) => {
     const statusCode = err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
 
-    console.error(`[ERROR] ${statusCode}: ${message}`);
+    // Always log the full error internally
+    console.error(`[ERROR] ${statusCode}: ${err.message}`, err.stack);
+
+    // Never leak internal details for server errors
+    const clientMessage =
+        statusCode < 500
+            ? err.message || "An error occurred"
+            : "Internal server error";
 
     res.status(statusCode).json({
         success: false,
-        error: message,
+        error: clientMessage,
     });
 };
 

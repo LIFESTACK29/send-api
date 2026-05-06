@@ -14,6 +14,7 @@ export interface ITransaction extends Document {
     source: TransactionSource;
     amount: number; // in kobo
     reference: string;
+    idempotencyKey?: string;
     status: TransactionStatus;
     description: string;
     metadata?: Record<string, any>;
@@ -65,6 +66,11 @@ const TransactionSchema: Schema = new Schema(
         },
         metadata: {
             type: Schema.Types.Mixed,
+        },
+        idempotencyKey: {
+            type: String,
+            index: true,
+            sparse: true,
         },
     },
     { timestamps: true },

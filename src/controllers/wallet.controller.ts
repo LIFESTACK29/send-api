@@ -432,7 +432,9 @@ export const handleWebhook = async (
 
         res.status(200).json({ message: "Webhook received" });
     } catch (error) {
-        res.status(200).json({ message: "Webhook received with errors" });
+        // Return 500 so Paystack retries — do NOT swallow processing errors with 200
+        console.error("[Webhook] Processing error:", error);
+        res.status(500).json({ message: "Webhook processing failed" });
     }
 };
 
@@ -787,6 +789,31 @@ export const withdraw = async (
             return;
         }
 
+        // Idempotency — client must supply a unique key per withdrawal attempt
+        const idempotencyKey = req.headers["idempotency-key"] as string;
+        if (!idempotencyKey) {
+            res.status(400).json({
+                message: "Idempotency-Key header is required",
+            });
+            return;
+        }
+
+        // If this key was already processed, return the existing transaction
+        const existingTx = await Transaction.findOne({ idempotencyKey });
+        if (existingTx) {
+            res.status(200).json({
+                message: "Withdrawal already processed",
+                transaction: {
+                    id: existingTx._id,
+                    amount: existingTx.amount,
+                    amountInNaira: existingTx.amount / 100,
+                    reference: existingTx.reference,
+                    status: existingTx.status,
+                },
+            });
+            return;
+        }
+
         const { amount } = req.body; // amount in kobo
 
         if (!amount || amount <= 0) {
@@ -801,23 +828,25 @@ export const withdraw = async (
             return;
         }
 
-        // Check wallet balance
-        const wallet = await Wallet.findOne({ userId });
-        if (!wallet) {
-            res.status(404).json({ message: "Wallet not found" });
-            return;
-        }
-
-        if (wallet.balance < amount) {
-            res.status(400).json({ message: "Insufficient balance" });
-            return;
-        }
-
-        // Get bank account
+        // Get bank account before touching wallet
         const bankAccount = await BankAccount.findOne({ userId });
         if (!bankAccount) {
-            res.status(400).json({
-                message: "Please add a bank account first",
+            res.status(400).json({ message: "Please add a bank account first" });
+            return;
+        }
+
+        // Atomically debit wallet — only succeeds if balance is sufficient
+        const wallet = await Wallet.findOneAndUpdate(
+            { userId, balance: { $gte: amount } },
+            { $inc: { balance: -amount } },
+            { new: true },
+        );
+
+        if (!wallet) {
+            // Either wallet doesn't exist or balance was insufficient
+            const exists = await Wallet.exists({ userId });
+            res.status(exists ? 400 : 404).json({
+                message: exists ? "Insufficient balance" : "Wallet not found",
             });
             return;
         }
@@ -825,19 +854,16 @@ export const withdraw = async (
         // Generate unique reference
         const reference = `WD-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-        // Debit wallet first
-        wallet.balance -= amount;
-        await wallet.save();
-
-        // Create pending transaction
+        // Create pending transaction (stores idempotency key)
         const transaction = await Transaction.create({
             userId,
             type: "debit",
             source: "withdrawal",
             amount,
             reference,
+            idempotencyKey,
             status: "pending",
-            description: `Withdrawal to ${bankAccount.bankName} - ${bankAccount.accountNumber}`,
+            description: `Withdrawal to ${bankAccount.bankName} - ${maskAccountNumber(bankAccount.accountNumber)}`,
             metadata: {
                 bankName: bankAccount.bankName,
                 accountNumber: bankAccount.accountNumber,
@@ -854,10 +880,8 @@ export const withdraw = async (
                 reference,
             );
         } catch (transferError: any) {
-            // If transfer fails, refund wallet and mark tx as failed
-            wallet.balance += amount;
-            await wallet.save();
-
+            // Refund atomically and mark transaction failed
+            await Wallet.findOneAndUpdate({ userId }, { $inc: { balance: amount } });
             transaction.status = "failed";
             await transaction.save();
 

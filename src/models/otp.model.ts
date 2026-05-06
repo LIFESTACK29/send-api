@@ -4,6 +4,7 @@ export interface IOtp extends Document {
     userId: mongoose.Types.ObjectId;
     code: string;
     expiresAt: Date;
+    attempts: number;
     createdAt: Date;
 }
 
@@ -21,6 +22,10 @@ const OtpSchema: Schema = new Schema({
         type: Date,
         required: true,
         index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
+    },
+    attempts: {
+        type: Number,
+        default: 0,
     },
     createdAt: {
         type: Date,

@@ -3,7 +3,7 @@ import Document from "../models/document.model";
 import User from "../models/user.model";
 import Vehicle from "../models/vehicle.model";
 import { AuthRequest } from "../types/user.type";
-import { uploadToStorage } from "../middlewares/upload.middleware";
+import { uploadToStorage, getStorageUrl } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
 import {
     getUserAccessState,
@@ -216,9 +216,21 @@ export const getDocument: RequestHandler = CatchAsync(
 
         await syncUserOnboardingState(userId);
 
+        // Generate a short-lived presigned URL so the document is never publicly accessible
+        const signedUrl = document.documentUrl
+            ? await getStorageUrl(document.documentUrl)
+            : null;
+
         res.status(200).json({
             success: true,
-            data: document,
+            data: {
+                _id: document._id,
+                documentType: document.documentType,
+                documentNumber: document.documentNumber,
+                expiryDate: document.expiryDate,
+                verificationStatus: document.verificationStatus,
+                documentUrl: signedUrl, // presigned, expires in 1 hour
+            },
         });
     },
 );
@@ -435,11 +447,12 @@ export const getRiderVerificationDetail: RequestHandler = CatchAsync(
             return;
         }
 
-        const [vehicles, accessState] = await Promise.all([
+        const [vehicles, accessState, signedProfileUrl] = await Promise.all([
             Vehicle.find({ userId }).select(
                 "vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt",
             ),
             getUserAccessState(rider as any),
+            rider.profileImageUrl ? getStorageUrl(rider.profileImageUrl) : Promise.resolve(null),
         ]);
 
         res.status(200).json({
@@ -455,7 +468,7 @@ export const getRiderVerificationDetail: RequestHandler = CatchAsync(
                     onboardingStage: rider.onboardingStage,
                     verificationStatus: rider.verificationStatus,
                     verificationNotes: rider.verificationNotes,
-                    profileImageUrl: rider.profileImageUrl,
+                    profileImageUrl: signedProfileUrl,
                     accessState,
                     createdAt: rider.createdAt,
                     updatedAt: rider.updatedAt,

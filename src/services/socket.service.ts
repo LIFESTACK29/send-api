@@ -5,135 +5,231 @@ import User from "../models/user.model";
 
 let io: SocketIOServer;
 
+// ─── Haversine distance ───────────────────────────────────────────────────────
+
+const haversineKm = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+): number => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const isValidCoord = (lat: number, lng: number): boolean =>
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    lat >= -90 && lat <= 90 &&
+    lng >= -180 && lng <= 180;
+
+const DISCOVERY_RADIUS_KM = 5;
+
+// Per-socket pickup location for the discovery feature.
+// Keyed by socket.id; cleared on leave_discovery and disconnect.
+const discoveryPickups = new Map<string, { lat: number; lng: number }>();
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
 export const initSocket = (server: HttpServer) => {
     io = new SocketIOServer(server, {
         cors: {
-            origin: "*",
+            // Mirror app.ts ALLOWED_ORIGINS — mobile apps have no browser origin
+            origin: process.env.ALLOWED_ORIGINS
+                ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+                : true,
             methods: ["GET", "POST"],
         },
     });
 
-    // JWT Authentication middleware for Socket.io
+    // JWT auth middleware
     io.use((socket, next) => {
         const token = socket.handshake.auth?.token;
         if (!token) {
             return next(new Error("Authentication error: Token missing"));
         }
-
         try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+            const decoded = jwt.verify(
+                token,
+                process.env.JWT_SECRET as string,
+            ) as any;
             socket.data.user = decoded;
             next();
-        } catch (err) {
+        } catch {
             next(new Error("Authentication error: Invalid token"));
         }
     });
 
     io.on("connection", (socket: Socket) => {
-        const userId = socket.data.user?.userId;
-        const role = socket.data.user?.role;
+        const userId = socket.data.user?.userId as string | undefined;
+        const role = socket.data.user?.role as string | undefined;
 
-        // Join user-specific room
-        if (userId) {
-            socket.join(`user-${userId}`);
+        if (!userId) return;
 
-            // If they are a customer, join customer room
-            if (role === "customer") {
-                socket.join(`customer-${userId}`);
-            }
+        socket.join(`user-${userId}`);
 
-            // If they are a rider, join the riders pool
-            if (role === "rider") {
-                socket.join("riders-pool");
-          
+        // ── Rider handlers ──────────────────────────────────────────────────
 
-                // Set rider as online when they connect
-                User.findByIdAndUpdate(userId, { isOnline: true }).catch(err =>
-                    console.error("Error setting rider online:", err)
-                );
-                socket.emit("rider_presence", {
-                    status: "online",
-                    riderId: userId,
-                });
+        if (role === "rider") {
+            socket.join("riders-pool");
 
-                // Handle location updates from rider
-                socket.on("update_location", async (data: { lat: number; lng: number }) => {
+            User.findByIdAndUpdate(userId, { isOnline: true }).catch((err) =>
+                console.error("Error setting rider online:", err),
+            );
+            socket.emit("rider_presence", { status: "online", riderId: userId });
+
+            // Location update — validate coords, filter broadcasts to nearby customers
+            socket.on(
+                "update_location",
+                async (data: { lat: number; lng: number }) => {
+                    if (!isValidCoord(data.lat, data.lng)) return;
+
                     try {
-                        const updatedUser = await User.findByIdAndUpdate(userId, {
+                        await User.findByIdAndUpdate(userId, {
                             currentLocation: {
                                 type: "Point",
-                                coordinates: [data.lng, data.lat], // MongoDB coordinates are [lng, lat]
+                                coordinates: [data.lng, data.lat],
                             },
                             lastLocationUpdate: new Date(),
-                        }, { new: true });
-
-             
-
-                        // BROADCAST to all customers in the discovery pool
-                        io.to("rider-discovery").emit("rider_location_update", {
-                            riderId: userId,
-                            name: `${updatedUser?.firstName} ${updatedUser?.lastName}`,
-                            coords: { lat: data.lat, lng: data.lng },
                         });
+
+                        // Only emit to customers whose pickup is within 5 km
+                        const room = io.sockets.adapter.rooms.get("rider-discovery");
+                        if (!room) return;
+
+                        for (const socketId of room) {
+                            const pickup = discoveryPickups.get(socketId);
+                            if (!pickup) continue;
+                            const dist = haversineKm(
+                                pickup.lat,
+                                pickup.lng,
+                                data.lat,
+                                data.lng,
+                            );
+                            if (dist <= DISCOVERY_RADIUS_KM) {
+                                io.to(socketId).emit("rider_location_update", {
+                                    riderId: userId,
+                                    // Name intentionally omitted — revealed only after acceptance
+                                    coords: { lat: data.lat, lng: data.lng },
+                                });
+                            }
+                        }
                     } catch (error) {
                         console.error("Error updating rider location:", error);
                     }
-                });
+                },
+            );
 
-                // Handle online status toggle
-                socket.on("toggle_online", async (data: { isOnline: boolean }) => {
+            // Online/offline toggle
+            socket.on(
+                "toggle_online",
+                async (data: { isOnline: boolean }) => {
                     try {
-                        await User.findByIdAndUpdate(userId, { isOnline: data.isOnline });
-                 
-
-                        // If they go offline, notify discovery pool to remove them
+                        await User.findByIdAndUpdate(userId, {
+                            isOnline: data.isOnline,
+                        });
                         if (!data.isOnline) {
-                            io.to("rider-discovery").emit("rider_offline", { riderId: userId });
+                            io.to("rider-discovery").emit("rider_offline", {
+                                riderId: userId,
+                            });
                         }
                     } catch (error) {
                         console.error("Error toggling rider online status:", error);
                     }
-                });
-            }
+                },
+            );
+        }
 
-            // JOIN/LEAVE discovery for customers
-            if (role === "customer") {
-                socket.on("join_discovery", () => {
+        // ── Customer handlers ───────────────────────────────────────────────
+
+        if (role === "customer") {
+            socket.join(`customer-${userId}`);
+
+            // Customer joins discovery and supplies their pickup coordinates.
+            // Only riders within 5 km of that pickup will be sent / streamed.
+            socket.on(
+                "join_discovery",
+                (data?: { pickupLat?: number; pickupLng?: number }) => {
                     socket.join("rider-discovery");
 
-                    // Immediately send current online riders to the new joiner
+                    if (
+                        data &&
+                        isValidCoord(data.pickupLat ?? NaN, data.pickupLng ?? NaN)
+                    ) {
+                        discoveryPickups.set(socket.id, {
+                            lat: data.pickupLat as number,
+                            lng: data.pickupLng as number,
+                        });
+                    }
+
+                    // Send snapshot of currently online riders within 5 km
+                    const pickup = discoveryPickups.get(socket.id);
+
                     User.find({
                         role: "rider",
                         isOnline: true,
                         riderStatus: "active",
-                    }).then(riders => {
-                        socket.emit("initial_riders", riders.map(r => ({
-                            riderId: r._id,
-                            name: `${r.firstName} ${r.lastName}`,
-                            profileImageUrl: r.profileImageUrl || null,
-                            riderStatus: r.riderStatus || "incomplete",
-                            coords: {
-                                lat: r.currentLocation?.coordinates[1],
-                                lng: r.currentLocation?.coordinates[0]
-                            },
-                        })));
-                    });
-                });
+                    })
+                        .select("currentLocation profileImageUrl riderStatus")
+                        .then((riders) => {
+                            const nearby = pickup
+                                ? riders.filter((r) => {
+                                      const coords = r.currentLocation?.coordinates;
+                                      if (!coords) return false;
+                                      return (
+                                          haversineKm(
+                                              pickup.lat,
+                                              pickup.lng,
+                                              coords[1],
+                                              coords[0],
+                                          ) <= DISCOVERY_RADIUS_KM
+                                      );
+                                  })
+                                : riders;
 
-                socket.on("leave_discovery", () => {
-                    socket.leave("rider-discovery");
-                    console.log(`👋 Customer ${userId} left rider-discovery`);
-                });
-            }
+                            socket.emit(
+                                "initial_riders",
+                                nearby.map((r) => ({
+                                    riderId: r._id,
+                                    // Name intentionally omitted — revealed only after acceptance
+                                    profileImageUrl: r.profileImageUrl || null,
+                                    riderStatus: r.riderStatus || "incomplete",
+                                    coords: r.currentLocation?.coordinates
+                                        ? {
+                                              lat: r.currentLocation.coordinates[1],
+                                              lng: r.currentLocation.coordinates[0],
+                                          }
+                                        : null,
+                                })),
+                            );
+                        })
+                        .catch((err) =>
+                            console.error("Error fetching initial riders:", err),
+                        );
+                },
+            );
+
+            socket.on("leave_discovery", () => {
+                socket.leave("rider-discovery");
+                discoveryPickups.delete(socket.id);
+            });
         }
 
+        // ── Disconnect ──────────────────────────────────────────────────────
+
         socket.on("disconnect", async () => {
-            console.log(`🔌 Disconnected: ${socket.id}`);
+            discoveryPickups.delete(socket.id);
+
             if (userId && role === "rider") {
-                // Set rider as offline when they disconnect
                 try {
                     await User.findByIdAndUpdate(userId, { isOnline: false });
-                    console.log(`😴 Rider ${userId} is now offline (disconnected)`);
                 } catch (error) {
                     console.error("Error setting rider offline on disconnect:", error);
                 }
@@ -145,28 +241,14 @@ export const initSocket = (server: HttpServer) => {
 };
 
 export const getIO = () => {
-    if (!io) {
-        throw new Error("Socket.io not initialized!");
-    }
+    if (!io) throw new Error("Socket.io not initialized!");
     return io;
 };
 
-/**
- * Emit event to a specific room
- */
 export const emitToRoom = (room: string, event: string, data: any) => {
-    if (io) {
-        io.to(room).emit(event, data);
-        console.log(`[Socket] Emitted ${event} to ${room}`);
-    }
+    if (io) io.to(room).emit(event, data);
 };
 
-/**
- * Emit event to all riders
- */
 export const emitToRiders = (event: string, data: any) => {
-    if (io) {
-        io.to("riders-pool").emit(event, data);
-        console.log(`[Socket] Emitted ${event} to riders-pool`);
-    }
+    if (io) io.to("riders-pool").emit(event, data);
 };
