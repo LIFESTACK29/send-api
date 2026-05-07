@@ -1342,8 +1342,14 @@ export const getMyDeliveries = async (
             query.$or.push({ riderId: objectId });
         }
 
+        const { status, limit } = req.query;
+        if (status) query.status = String(status).toUpperCase();
+
+        const limitNum = limit ? parseInt(String(limit), 10) : 0;
+
         const deliveries = await Delivery.find(query)
             .sort({ createdAt: -1 })
+            .limit(limitNum > 0 ? limitNum : 0)
             .populate(
                 "riderId",
                 "firstName lastName profileImageUrl riderStatus phoneNumber",
@@ -1413,6 +1419,17 @@ export const getDeliveryById = async (
 
         if (!delivery) {
             res.status(404).json({ message: "Delivery not found" });
+            return;
+        }
+
+        const userId = getUserId(req);
+        const isOwner =
+            delivery.customerId?.toString() === userId ||
+            (delivery.riderId && (delivery.riderId as any)._id?.toString() === userId) ||
+            (delivery.riderId && delivery.riderId?.toString() === userId);
+
+        if (!isOwner && req.user?.role !== "admin") {
+            res.status(403).json({ message: "Forbidden" });
             return;
         }
 
