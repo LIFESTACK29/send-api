@@ -5,11 +5,19 @@ export type TransactionSource =
     | "bank_transfer"
     | "delivery_fee"
     | "delivery_earning"
-    | "withdrawal";
-export type TransactionStatus = "pending" | "success" | "failed";
+    | "withdrawal"
+    | "ride_fare_hold"
+    | "ride_fare"
+    | "ride_earning"
+    | "settlement_payout"
+    | "settlement_reversal"
+    | "ride_refund"
+    | "platform_commission";
+export type TransactionStatus = "pending" | "completed" | "cancelled" | "success" | "failed";
 
 export interface ITransaction extends Document {
     userId: mongoose.Types.ObjectId;
+    rideId?: mongoose.Types.ObjectId;
     type: TransactionType;
     source: TransactionSource;
     amount: number; // in kobo
@@ -30,6 +38,12 @@ const TransactionSchema: Schema = new Schema(
             required: true,
             index: true,
         },
+        rideId: {
+            type: Schema.Types.ObjectId,
+            ref: "Ride",
+            index: true,
+            sparse: true,
+        },
         type: {
             type: String,
             enum: ["credit", "debit"],
@@ -42,6 +56,13 @@ const TransactionSchema: Schema = new Schema(
                 "delivery_fee",
                 "delivery_earning",
                 "withdrawal",
+                "ride_fare_hold",
+                "ride_fare",
+                "ride_earning",
+                "settlement_payout",
+                "settlement_reversal",
+                "ride_refund",
+                "platform_commission",
             ],
             required: true,
         },
@@ -57,7 +78,7 @@ const TransactionSchema: Schema = new Schema(
         },
         status: {
             type: String,
-            enum: ["pending", "success", "failed"],
+            enum: ["pending", "completed", "cancelled", "success", "failed"],
             default: "pending",
         },
         description: {

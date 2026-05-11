@@ -19,7 +19,7 @@ import {
 } from "../types/paystack.type";
 
 const PLATFORM_COMMISSION_RATE = 0.1; // 10%
-const MIN_WITHDRAWAL_AMOUNT = 100000; // ₦1,000 in kobo
+const MIN_WITHDRAWAL_AMOUNT = 1000; // ₦10 in kobo (lowered for testing)
 
 const maskAccountNumber = (accountNumber?: string): string => {
     if (!accountNumber) return "";
@@ -107,7 +107,7 @@ export const createWallet = async (
                     first_name: user.firstName,
                     last_name: user.lastName,
                     phone: user.phoneNumber,
-                    preferred_bank: "test-bank",
+                    preferred_bank: "wema-bank",
                 });
 
             const dedicatedAccount = assignResponse.data;
@@ -489,32 +489,33 @@ const handleChargeSuccess = async (data: any) => {
 };
 
 /**
- * Handle transfer.success — mark withdrawal as successful
+ * Handle transfer.success — routes to settlement or withdrawal handler based on reference prefix
  */
 const handleTransferSuccess = async (data: TransferData) => {
     const reference = data.reference;
-
+    if (reference?.startsWith("setl_")) {
+        return handleSettlementSuccess(reference);
+    }
+    // Withdrawal path
     const transaction = await Transaction.findOne({ reference });
     if (!transaction) return;
-
     transaction.status = "success";
     await transaction.save();
-
 };
 
 /**
- * Handle transfer.failed — refund the user's wallet
+ * Handle transfer.failed — routes to settlement or withdrawal handler
  */
 const handleTransferFailed = async (data: TransferData) => {
     const reference = data.reference;
-
+    if (reference?.startsWith("setl_")) {
+        return handleSettlementFailed(reference, data.reason || "Transfer failed");
+    }
+    // Withdrawal path
     const transaction = await Transaction.findOne({ reference });
     if (!transaction || transaction.status === "failed") return;
-
     transaction.status = "failed";
     await transaction.save();
-
-    // Refund the wallet
     const wallet = await Wallet.findOne({ userId: transaction.userId });
     if (wallet) {
         wallet.balance += transaction.amount;
@@ -523,10 +524,150 @@ const handleTransferFailed = async (data: TransferData) => {
 };
 
 /**
- * Handle transfer.reversed — refund the user's wallet (same as failed)
+ * Handle transfer.reversed — routes to settlement or withdrawal handler
  */
 const handleTransferReversed = async (data: TransferData) => {
+    const reference = data.reference;
+    if (reference?.startsWith("setl_")) {
+        return handleSettlementReversed(reference);
+    }
     return handleTransferFailed(data);
+};
+
+// ── Settlement webhook handlers ───────────────────────────────────────────────
+
+const handleSettlementSuccess = async (reference: string) => {
+    const Settlement = (await import("../models/settlement.model")).default;
+    const Ride = (await import("../models/ride.model")).default;
+
+    const settlement = await Settlement.findOne({ paystackReference: reference });
+    if (!settlement || settlement.status === "SETTLED") return;
+
+    const session = await Transaction.startSession();
+    session.startTransaction();
+    try {
+        const riderWallet = await Wallet.findOne({ userId: settlement.riderId }).session(session);
+        const debitRef = `setl_payout_${settlement._id}_${Date.now()}`;
+
+        await Transaction.create(
+            [
+                {
+                    userId: settlement.riderId,
+                    type: "debit",
+                    source: "settlement_payout",
+                    amount: settlement.amount,
+                    reference: debitRef,
+                    status: "completed",
+                    description: `Settlement payout`,
+                    metadata: { settlementId: settlement._id },
+                },
+            ],
+            { session },
+        );
+
+        const balanceBefore = riderWallet?.balance ?? 0;
+        await Wallet.findOneAndUpdate(
+            { userId: settlement.riderId },
+            { $inc: { balance: -settlement.amount } },
+            { session },
+        );
+
+        settlement.status = "SETTLED";
+        settlement.settledAt = new Date();
+        settlement.walletBalanceAfterSettlement = Math.max(0, balanceBefore - settlement.amount);
+        await settlement.save({ session });
+
+        await session.commitTransaction();
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        session.endSession();
+    }
+
+    const { emitToRoom } = await import("../services/socket.service");
+    emitToRoom("ops_room", "settlement_status_update", {
+        settlementId: settlement._id,
+        status: "SETTLED",
+        riderId: settlement.riderId,
+    });
+};
+
+const handleSettlementFailed = async (reference: string, reason: string) => {
+    const Settlement = (await import("../models/settlement.model")).default;
+    const Ride = (await import("../models/ride.model")).default;
+
+    const settlement = await Settlement.findOne({ paystackReference: reference });
+    if (!settlement || settlement.status === "FAILED") return;
+
+    settlement.status = "FAILED";
+    settlement.paystackFailureReason = reason;
+    await settlement.save();
+
+    // Release ride locks so they can be re-settled
+    await Ride.updateMany(
+        { _id: { $in: settlement.rideIds } },
+        { settlementId: null },
+    );
+
+    const { emitToRoom } = await import("../services/socket.service");
+    emitToRoom("ops_room", "settlement_status_update", {
+        settlementId: settlement._id,
+        status: "FAILED",
+        riderId: settlement.riderId,
+        reason,
+    });
+};
+
+const handleSettlementReversed = async (reference: string) => {
+    const Settlement = (await import("../models/settlement.model")).default;
+
+    const settlement = await Settlement.findOne({ paystackReference: reference });
+    if (!settlement || settlement.status === "REVERSED") return;
+
+    const session = await Transaction.startSession();
+    session.startTransaction();
+    try {
+        const reversalRef = `setl_reversal_${settlement._id}_${Date.now()}`;
+        await Transaction.create(
+            [
+                {
+                    userId: settlement.riderId,
+                    type: "credit",
+                    source: "settlement_reversal",
+                    amount: settlement.amount,
+                    reference: reversalRef,
+                    status: "completed",
+                    description: `Settlement reversal`,
+                    metadata: { settlementId: settlement._id },
+                },
+            ],
+            { session },
+        );
+
+        await Wallet.findOneAndUpdate(
+            { userId: settlement.riderId },
+            { $inc: { balance: settlement.amount } },
+            { session },
+        );
+
+        settlement.status = "REVERSED";
+        await settlement.save({ session });
+
+        await session.commitTransaction();
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        session.endSession();
+    }
+
+    const { emitToRoom } = await import("../services/socket.service");
+    emitToRoom("ops_room", "settlement_status_update", {
+        settlementId: settlement._id,
+        status: "REVERSED",
+        riderId: settlement.riderId,
+    });
 };
 
 /**
@@ -971,6 +1112,48 @@ export const processDeliveryPayment = async (
     });
 
     return { success: true, message: "Payment processed successfully" };
+};
+
+/**
+ * @desc    Admin: reset a user's wallet balance to 0 (dev/testing only)
+ * @route   POST /api/v1/wallet/admin/reset
+ * @access  Private (admin only)
+ */
+export const resetWallet = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        if (req.user?.role !== "admin") {
+            res.status(403).json({ message: "Forbidden — admin only" });
+            return;
+        }
+
+        const { userId } = req.body;
+        if (!userId) {
+            res.status(400).json({ message: "userId is required" });
+            return;
+        }
+
+        const wallet = await Wallet.findOneAndUpdate(
+            { userId },
+            { $set: { balance: 0 } },
+            { new: true },
+        );
+
+        if (!wallet) {
+            res.status(404).json({ message: "Wallet not found" });
+            return;
+        }
+
+        res.status(200).json({
+            message: "Wallet balance reset to 0",
+            wallet: { id: wallet._id, balance: 0, balanceInNaira: 0 },
+        });
+    } catch (error) {
+        next(error);
+    }
 };
 
 /**

@@ -15,9 +15,10 @@ import {
 import { AuthRequest } from "../types/user.type";
 import { getUserId } from "../middlewares/auth.middleware";
 import { uploadToStorage } from "../middlewares/upload.middleware";
+import { processDeliveryPayment } from "./wallet.controller";
 
-const BASE_FEE_NAIRA = 1000;
-const PER_KM_FEE_NAIRA = 200;
+const BASE_FEE_NAIRA = 100;
+const PER_KM_FEE_NAIRA = 0;
 const MATCH_RADIUS_METERS = 5000;
 const MATCH_TIMEOUT_SECONDS = 60;
 const RIDER_HOME_HISTORY_LIMIT = 20;
@@ -1475,6 +1476,65 @@ export const getDeliveryById = async (
                 createdAt: delivery.createdAt,
                 updatedAt: delivery.updatedAt,
             },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Rider marks a delivery as completed and triggers wallet payment
+ * @route POST /api/v1/deliveries/:id/complete
+ */
+export const completeDelivery = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction,
+): Promise<void> => {
+    try {
+        const riderId = getUserId(req);
+        if (!riderId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+
+        const { id } = req.params;
+
+        const delivery = await Delivery.findOneAndUpdate(
+            { _id: id, riderId, status: "ONGOING" },
+            { $set: { status: "DELIVERED" } },
+            { new: true },
+        );
+
+        if (!delivery) {
+            res.status(404).json({
+                message: "Delivery not found, not ongoing, or not assigned to you",
+            });
+            return;
+        }
+
+        const paymentResult = await processDeliveryPayment(
+            delivery.customerId.toString(),
+            riderId,
+            delivery._id.toString(),
+            delivery.fee,
+        );
+
+        emitToRoom(`customer-${delivery.customerId}`, "delivery_completed", {
+            deliveryId: delivery._id,
+            trackingId: delivery.trackingId,
+            payment: paymentResult,
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Delivery completed",
+            delivery: {
+                id: delivery._id,
+                trackingId: delivery.trackingId,
+                status: delivery.status,
+            },
+            payment: paymentResult,
         });
     } catch (error) {
         next(error);

@@ -40,7 +40,7 @@ export const assignDedicatedVirtualAccount = async (payload: {
 }) => {
     const { data } = await paystackApi.post("/dedicated_account/assign", {
         ...payload,
-        preferred_bank: payload.preferred_bank || "test-bank",
+        preferred_bank: payload.preferred_bank || "wema-bank",
         country: "NG",
     });
     return data;
@@ -55,7 +55,7 @@ export const createDedicatedVirtualAccount = async (
 ) => {
     const { data } = await paystackApi.post("/dedicated_account", {
         customer: customerCode,
-        preferred_bank: "test-bank", // Default for test/live
+        preferred_bank: preferredBank || "wema-bank",
     });
     return data;
 };
@@ -130,6 +130,22 @@ export const initiateTransfer = async (
     return data;
 };
 
+/**
+ * Check Paystack platform balance
+ */
+export const getPlatformBalance = async () => {
+    const { data } = await paystackApi.get("/balance");
+    return data;
+};
+
+/**
+ * Verify a Paystack transfer by reference
+ */
+export const verifyTransfer = async (reference: string) => {
+    const { data } = await paystackApi.get(`/transfer/verify/${reference}`);
+    return data;
+};
+
 export default {
     createCustomer,
     createDedicatedVirtualAccount,
@@ -139,4 +155,6 @@ export default {
     resolveAccountNumber,
     createTransferRecipient,
     initiateTransfer,
+    getPlatformBalance,
+    verifyTransfer,
 };

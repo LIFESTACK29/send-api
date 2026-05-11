@@ -49,9 +49,14 @@ export const initSocket = (server: HttpServer) => {
         },
     });
 
-    // JWT auth middleware
+    // JWT auth middleware — accepts token from extraHeaders.Authorization (mobile)
+    // or handshake.auth.token (web/legacy)
     io.use((socket, next) => {
-        const token = socket.handshake.auth?.token;
+        const authHeader = socket.handshake.headers?.authorization as string | undefined;
+        const token = authHeader?.startsWith("Bearer ")
+            ? authHeader.slice(7)
+            : socket.handshake.auth?.token;
+
         if (!token) {
             return next(new Error("Authentication error: Token missing"));
         }
@@ -74,6 +79,10 @@ export const initSocket = (server: HttpServer) => {
         if (!userId) return;
 
         socket.join(`user-${userId}`);
+
+        if (role === "admin" || role === "ops") {
+            socket.join("ops_room");
+        }
 
         // ── Rider handlers ──────────────────────────────────────────────────
 
@@ -198,7 +207,6 @@ export const initSocket = (server: HttpServer) => {
                                 "initial_riders",
                                 nearby.map((r) => ({
                                     riderId: r._id,
-                                    // Name intentionally omitted — revealed only after acceptance
                                     profileImageUrl: r.profileImageUrl || null,
                                     riderStatus: r.riderStatus || "incomplete",
                                     coords: r.currentLocation?.coordinates

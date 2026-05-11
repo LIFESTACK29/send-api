@@ -7,13 +7,26 @@ export interface IAddress {
     landmark?: string;
 }
 
+export interface IKekeRiderProfile {
+    campusId: mongoose.Types.ObjectId;
+    onboardedBy?: mongoose.Types.ObjectId;
+    onboardedAt?: Date;
+    tricycleIdentifier: string;
+    profileImage?: string;
+    notes?: string;
+    status: "PENDING_BANK_SETUP" | "ACTIVE" | "DEACTIVATED";
+    bankAccountVerifiedAt?: Date;
+    deactivatedAt?: Date;
+    deactivationReason?: string;
+}
+
 export interface IUser extends Document {
     firstName: string;
     lastName: string;
     email: string;
     phoneNumber: string;
     password: string;
-    role: "customer" | "rider" | "admin";
+    role: "customer" | "rider" | "admin" | "keke_rider" | "ops";
     isOnline: boolean;
     currentLocation?: {
         type: "Point";
@@ -24,7 +37,7 @@ export interface IUser extends Document {
     createdAt: Date;
     isOnboarded: boolean;
     updatedAt: Date;
-    // Rider-specific fields
+    // Delivery rider-specific fields
     riderStatus?:
         | "inactive"
         | "incomplete"
@@ -44,6 +57,8 @@ export interface IUser extends Document {
     profileImageUrl?: string;
     verificationNotes?: string;
     walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
+    // Keke rider-specific fields
+    kekeRiderProfile?: IKekeRiderProfile;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -62,7 +77,7 @@ const UserSchema: Schema = new Schema(
         password: { type: String, required: true, select: false },
         role: {
             type: String,
-            enum: ["customer", "rider", "admin"],
+            enum: ["customer", "rider", "admin", "keke_rider", "ops"],
             required: true,
         },
         isOnboarded: { type: Boolean, default: false },
@@ -116,6 +131,22 @@ const UserSchema: Schema = new Schema(
             type: String,
             enum: ["not_started", "creating", "active", "failed"],
             default: "not_started",
+        },
+        kekeRiderProfile: {
+            campusId: { type: Schema.Types.ObjectId, ref: "Campus" },
+            onboardedBy: { type: Schema.Types.ObjectId, ref: "User" },
+            onboardedAt: { type: Date },
+            tricycleIdentifier: { type: String },
+            profileImage: { type: String },
+            notes: { type: String },
+            status: {
+                type: String,
+                enum: ["PENDING_BANK_SETUP", "ACTIVE", "DEACTIVATED"],
+                default: "PENDING_BANK_SETUP",
+            },
+            bankAccountVerifiedAt: { type: Date },
+            deactivatedAt: { type: Date },
+            deactivationReason: { type: String },
         },
     },
     { timestamps: true },

@@ -12,6 +12,7 @@ import {
     saveBankAccount,
     getBankAccount,
     withdraw,
+    resetWallet,
 } from "../controllers/wallet.controller";
 
 const router = Router();
@@ -33,5 +34,6 @@ router.post("/resolve-account", resolveAccount);
 router.post("/bank-account", saveBankAccount);
 router.get("/bank-account", getBankAccount);
 router.post("/withdraw", withdraw);
+router.post("/admin/reset", resetWallet);
 
 export default router;

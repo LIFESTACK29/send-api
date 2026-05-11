@@ -5,6 +5,8 @@ import app from "./src/app";
 import connectDB from "./src/config/db";
 import { initSocket } from "./src/services/socket.service";
 import { startDeliveryWorker } from "./src/workers/delivery.worker";
+import { kekeWorker } from "./src/workers/keke.worker";
+import { scheduleReconciliation } from "./src/queues/keke.queue";
 
 const PORT: number = parseInt(process.env.PORT || "4250", 10);
 
@@ -17,6 +19,7 @@ const startServer = async () => {
 
         // Start background workers
         startDeliveryWorker();
+        await scheduleReconciliation(); // keke settlement reconciliation every 15 min
 
         server.listen(PORT, "0.0.0.0", () => {
             console.log(

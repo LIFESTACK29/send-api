@@ -16,6 +16,7 @@ import {
     assignRiderToDeliveryByAdmin,
     declineMatchRequest,
     getRiderHomeSummary,
+    completeDelivery,
 } from "../controllers/delivery.controller";
 import { upload, validateFileType } from "../middlewares/upload.middleware";
 
@@ -34,6 +35,7 @@ router.post("/match-requests/:id/wait-more", waitMoreForRider);
 router.post("/match-requests/:id/create-manual", createDeliveryManually);
 router.post("/:id/assign-rider", assignRiderToDeliveryByAdmin);
 router.post("/:id/accept", acceptDelivery);
+router.post("/:id/complete", completeDelivery);
 router.post("/:id/cancel", cancelDelivery);
 router.get("/:id", getDeliveryById);
 

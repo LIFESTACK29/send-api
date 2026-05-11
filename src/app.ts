@@ -10,6 +10,9 @@ import walletRoute from "./routes/wallet.route";
 import vehicleRoute from "./routes/vehicle.route";
 import onboardingRoute from "./routes/onboarding.route";
 import adminRoute from "./routes/admin.route";
+import campusRoute from "./routes/campus.route";
+import ridesRoute from "./routes/rides.route";
+import kekeAdminRoute from "./routes/admin/keke.route";
 import errorMiddleware from "./middlewares/error.middleware";
 
 const app = express();
@@ -46,6 +49,9 @@ app.use("/api/v1/wallet", walletRoute);
 app.use("/api/v1/onboarding", onboardingRoute);
 app.use("/api/v1/admin", adminRoute);
 app.use("/api/v1/riders", vehicleRoute);
+app.use("/api/v1/campus", campusRoute);
+app.use("/api/v1/rides", ridesRoute);
+app.use("/api/v1/admin", kekeAdminRoute);
 
 // Error handler
 app.use(errorMiddleware);
