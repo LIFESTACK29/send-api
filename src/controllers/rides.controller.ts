@@ -286,6 +286,22 @@ export const getMyRides = CatchAsync(async (req: AuthRequest, res: Response) => 
     });
 });
 
+// GET /api/v1/rides/my-active-ride  (passenger)
+export const getMyActiveRide = CatchAsync(async (req: AuthRequest, res: Response) => {
+    const ride = await Ride.findOne({
+        passengerId: req.user!.userId,
+        status: { $in: ["REQUESTED", "ASSIGNED", "RIDER_ON_THE_WAY", "ARRIVED", "IN_PROGRESS"] },
+    })
+        .populate("pickupLocationId", "name category")
+        .populate("dropoffLocationId", "name category")
+        .populate("pickupZoneId", "name")
+        .populate("dropoffZoneId", "name")
+        .populate("assignedRiderId", "firstName lastName kekeRiderProfile")
+        .lean();
+
+    res.status(200).json({ success: true, data: ride ? buildRideResponse(ride) : null });
+});
+
 // POST /api/v1/rides/:id/status  (passenger only)
 // RIDER_ON_THE_WAY → IN_PROGRESS: settles wallet hold and credits rider
 // IN_PROGRESS → COMPLETED: status update only

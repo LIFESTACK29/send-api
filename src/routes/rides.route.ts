@@ -5,6 +5,7 @@ import {
     requestRide,
     getRideById,
     getMyRides,
+    getMyActiveRide,
     cancelRide,
     passengerUpdateStatus,
 } from "../controllers/rides.controller";
@@ -15,6 +16,7 @@ router.use(authenticate);
 
 router.post("/quote", getRideQuote);
 router.get("/my-rides", getMyRides);
+router.get("/my-active-ride", getMyActiveRide);
 router.post("/", requestRide);
 router.get("/:id", getRideById);
 router.post("/:id/cancel", cancelRide);
