@@ -6,6 +6,7 @@ import {
     getRideById,
     getMyRides,
     cancelRide,
+    passengerUpdateStatus,
 } from "../controllers/rides.controller";
 
 const router = Router();
@@ -17,5 +18,6 @@ router.get("/my-rides", getMyRides);
 router.post("/", requestRide);
 router.get("/:id", getRideById);
 router.post("/:id/cancel", cancelRide);
+router.post("/:id/status", passengerUpdateStatus);
 
 export default router;

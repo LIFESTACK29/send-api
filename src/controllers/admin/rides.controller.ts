@@ -11,13 +11,14 @@ import { emitToRoom } from "../../services/socket.service";
 
 const KEKE_COMMISSION_RATE = parseFloat(process.env.KEKE_COMMISSION_RATE ?? "0.15");
 
-// Valid state transitions enforced in controllers
+// Admin can only advance to RIDER_ON_THE_WAY (from ASSIGNED) or CANCEL any active ride.
+// IN_PROGRESS and COMPLETED are triggered by the passenger via the customer app.
 const VALID_TRANSITIONS: Record<RideStatus, RideStatus[]> = {
-    REQUESTED: ["ASSIGNED", "CANCELLED"],
+    REQUESTED: ["CANCELLED"],
     ASSIGNED: ["RIDER_ON_THE_WAY", "CANCELLED"],
-    RIDER_ON_THE_WAY: ["ARRIVED", "CANCELLED"],
-    ARRIVED: ["IN_PROGRESS", "CANCELLED"],
-    IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+    RIDER_ON_THE_WAY: ["CANCELLED"],
+    ARRIVED: ["CANCELLED"],
+    IN_PROGRESS: ["CANCELLED"],
     COMPLETED: [],
     CANCELLED: [],
 };
@@ -124,13 +125,26 @@ export const assignRide = CatchAsync(async (req: AuthRequest, res: Response) => 
         .populate("dropoffLocationId", "name")
         .lean();
 
+    const ridePayload = {
+        ...(populated ?? {}),
+        id: populated?._id,
+        fareNaira: (populated?.fare ?? 0) / 100,
+        pickup: populated?.pickupLocationId,
+        dropoff: populated?.dropoffLocationId,
+        assignedRider: populated?.assignedRiderId,
+    };
+
     emitToRoom(`user-${ride.passengerId}`, "ride_assigned", {
-        ride: populated,
+        ride: ridePayload,
         rider: {
             name: `${kekeRider.firstName} ${kekeRider.lastName}`,
             tricycleIdentifier: kekeRider.kekeRiderProfile?.tricycleIdentifier,
         },
     });
+
+    // Notify the assigned keke rider of their new ride
+    emitToRoom(`user-${kekeRiderId}`, "keke_ride_assigned", { ride: ridePayload });
+    emitToRoom("ops_room", "ride_status_update", { rideId: ride._id, status: "ASSIGNED", trackingId: ride.trackingId });
 
     res.status(200).json({ success: true, data: populated });
 });
@@ -140,14 +154,6 @@ export const updateRideStatus = CatchAsync(async (req: AuthRequest, res: Respons
     const { status } = req.body as { status: RideStatus };
     if (!status) {
         res.status(400).json({ message: "status is required" });
-        return;
-    }
-
-    const TERMINAL: RideStatus[] = ["COMPLETED", "CANCELLED"];
-    if (status === "COMPLETED") {
-        res.status(400).json({
-            message: "Use POST /admin/rides/:id/complete to complete a ride",
-        });
         return;
     }
 

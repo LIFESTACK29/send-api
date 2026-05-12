@@ -5,6 +5,8 @@ import { CatchAsync } from "../utils/catchasync.util";
 import Ride from "../models/ride.model";
 import CampusLocation from "../models/campus-location.model";
 import FareRule from "../models/fare-rule.model";
+import Wallet from "../models/wallet.model";
+import Transaction from "../models/transaction.model";
 import { getAvailableBalance, placeRideHold, cancelRideHold } from "../services/wallet-hold.service";
 import { emitToRoom } from "../services/socket.service";
 
@@ -282,6 +284,112 @@ export const getMyRides = CatchAsync(async (req: AuthRequest, res: Response) => 
             pages: Math.ceil(total / limitNum),
         },
     });
+});
+
+// POST /api/v1/rides/:id/status  (passenger only)
+// RIDER_ON_THE_WAY → IN_PROGRESS: settles wallet hold and credits rider
+// IN_PROGRESS → COMPLETED: status update only
+export const passengerUpdateStatus = CatchAsync(async (req: AuthRequest, res: Response) => {
+    const { status } = req.body as { status: string };
+    const PASSENGER_TRANSITIONS: Record<string, string[]> = {
+        RIDER_ON_THE_WAY: ["ARRIVED"],
+        ARRIVED:          ["IN_PROGRESS"],
+        IN_PROGRESS:      ["COMPLETED"],
+    };
+
+    if (!status) {
+        res.status(400).json({ message: "status is required" });
+        return;
+    }
+
+    const ride = await Ride.findById(req.params.id);
+    if (!ride) {
+        res.status(404).json({ message: "Ride not found" });
+        return;
+    }
+    if (ride.passengerId.toString() !== req.user!.userId) {
+        res.status(403).json({ message: "Forbidden" });
+        return;
+    }
+
+    const allowed = PASSENGER_TRANSITIONS[ride.status] ?? [];
+    if (!allowed.includes(status)) {
+        res.status(409).json({
+            code: "ILLEGAL_RIDE_STATE_TRANSITION",
+            message: `Cannot transition from ${ride.status} to ${status}`,
+            currentStatus: ride.status,
+            allowedTransitions: allowed,
+        });
+        return;
+    }
+
+    // Wallet settlement happens when passenger confirms ride has started (IN_PROGRESS)
+    if (status === "IN_PROGRESS") {
+        const commissionKobo = Math.round(ride.fare * KEKE_COMMISSION_RATE);
+        const riderPayoutKobo = ride.fare - commissionKobo;
+
+        const session = await mongoose.startSession();
+        session.startTransaction();
+        try {
+            await Transaction.findByIdAndUpdate(
+                ride.walletHoldId,
+                { status: "completed", source: "ride_fare" },
+                { session },
+            );
+            await Wallet.findOneAndUpdate(
+                { userId: ride.passengerId },
+                { $inc: { balance: -ride.fare } },
+                { session },
+            );
+            const riderCreditRef = `ride_earning_${ride._id}_${Date.now()}`;
+            const [riderTx] = await Transaction.create(
+                [
+                    {
+                        userId: ride.assignedRiderId,
+                        rideId: ride._id,
+                        type: "credit",
+                        source: "ride_earning",
+                        amount: riderPayoutKobo,
+                        reference: riderCreditRef,
+                        status: "completed",
+                        description: `Ride earning for ${ride.trackingId}`,
+                    },
+                ],
+                { session },
+            );
+            await Wallet.findOneAndUpdate(
+                { userId: ride.assignedRiderId },
+                { $inc: { balance: riderPayoutKobo } },
+                { session },
+            );
+            ride.status = "IN_PROGRESS";
+            ride.platformCommissionAmount = commissionKobo;
+            ride.riderPayoutAmount = riderPayoutKobo;
+            (ride as any).riderCreditTransactionId = riderTx._id;
+            (ride.statusTimestamps as any).IN_PROGRESS = new Date();
+            await ride.save({ session });
+            await session.commitTransaction();
+        } catch (err) {
+            await session.abortTransaction();
+            throw err;
+        } finally {
+            session.endSession();
+        }
+
+        emitToRoom(`user-${ride.passengerId}`, "ride_status_update", { rideId: ride._id, status: "IN_PROGRESS" });
+        emitToRoom("ops_room", "ride_status_update", { rideId: ride._id, status: "IN_PROGRESS", trackingId: ride.trackingId });
+        res.status(200).json({ success: true, data: { status: "IN_PROGRESS" } });
+        return;
+    }
+
+    // COMPLETED — no financial action needed (already settled at IN_PROGRESS)
+    ride.status = "COMPLETED";
+    (ride.statusTimestamps as any).COMPLETED = new Date();
+    await ride.save();
+
+    emitToRoom(`user-${ride.passengerId}`, "ride_completed", { rideId: ride._id, status: "COMPLETED" });
+    emitToRoom("ops_room", "ride_status_update", { rideId: ride._id, status: "COMPLETED", trackingId: ride.trackingId });
+    res.status(200).json({ success: true, data: { status: "COMPLETED" } });
 });
 
 // POST /api/v1/rides/:id/cancel
