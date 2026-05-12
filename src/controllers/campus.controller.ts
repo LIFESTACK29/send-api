@@ -5,14 +5,21 @@ import CampusLocation from "../models/campus-location.model";
 import Campus from "../models/campus.model";
 import Zone from "../models/zone.model";
 
-// GET /api/v1/campus/locations?campusId=
+// GET /api/v1/campus/locations?campusId=  (campusId optional — falls back to first active campus)
 export const getCampusLocations = CatchAsync(
     async (req: AuthRequest, res: Response) => {
-        const { campusId } = req.query;
+        let { campusId } = req.query;
 
         if (!campusId || typeof campusId !== "string") {
-            res.status(400).json({ message: "campusId is required" });
-            return;
+            const defaultCampus = await Campus.findOne({ isActive: true })
+                .sort({ createdAt: 1 })
+                .select("_id")
+                .lean();
+            if (!defaultCampus) {
+                res.status(404).json({ message: "No active campus found" });
+                return;
+            }
+            campusId = defaultCampus._id.toString();
         }
 
         const locations = await CampusLocation.find({ campusId, isActive: true })
@@ -36,7 +43,7 @@ export const getCampusLocations = CatchAsync(
             });
         }
 
-        res.status(200).json({ success: true, data: grouped });
+        res.status(200).json({ success: true, campusId, data: grouped });
     },
 );
 
