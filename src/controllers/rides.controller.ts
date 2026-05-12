@@ -308,8 +308,7 @@ export const getMyActiveRide = CatchAsync(async (req: AuthRequest, res: Response
 export const passengerUpdateStatus = CatchAsync(async (req: AuthRequest, res: Response) => {
     const { status } = req.body as { status: string };
     const PASSENGER_TRANSITIONS: Record<string, string[]> = {
-        RIDER_ON_THE_WAY: ["ARRIVED"],
-        ARRIVED:          ["IN_PROGRESS"],
+        RIDER_ON_THE_WAY: ["IN_PROGRESS"],
         IN_PROGRESS:      ["COMPLETED"],
     };
 
