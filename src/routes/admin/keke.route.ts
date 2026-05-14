@@ -52,7 +52,7 @@ const router = Router();
 const csvUpload = multer({ storage: multer.memoryStorage() });
 
 router.use(authenticate);
-router.use(authorize("admin", "ops"));
+router.use(authorize("admin", "operations"));
 
 // ── Campus ──────────────────────────────────────────────────────────────────
 router.get("/campuses", listCampuses);

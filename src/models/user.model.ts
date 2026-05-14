@@ -26,7 +26,7 @@ export interface IUser extends Document {
     email: string;
     phoneNumber: string;
     password: string;
-    role: "customer" | "rider" | "admin" | "keke_rider" | "ops";
+    role: "customer" | "rider" | "admin" | "keke_rider" | "operations";
     isOnline: boolean;
     currentLocation?: {
         type: "Point";
@@ -77,7 +77,7 @@ const UserSchema: Schema = new Schema(
         password: { type: String, required: true, select: false },
         role: {
             type: String,
-            enum: ["customer", "rider", "admin", "keke_rider", "ops"],
+            enum: ["customer", "rider", "admin", "keke_rider", "operations"],
             required: true,
         },
         isOnboarded: { type: Boolean, default: false },

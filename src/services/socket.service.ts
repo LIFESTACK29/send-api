@@ -80,7 +80,7 @@ export const initSocket = (server: HttpServer) => {
 
         socket.join(`user-${userId}`);
 
-        if (role === "admin" || role === "ops") {
+        if (role === "admin" || role === "operations") {
             socket.join("ops_room");
         }
 

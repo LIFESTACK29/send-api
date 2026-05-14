@@ -333,8 +333,8 @@ export const adminLogin: RequestHandler = async (
             return;
         }
 
-        if (user.role !== "admin") {
-            res.status(403).json({ message: "Forbidden - admin only" });
+        if (user.role !== "admin" && user.role !== "operations") {
+            res.status(403).json({ message: "Forbidden" });
             return;
         }
 
