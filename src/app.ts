@@ -44,6 +44,11 @@ app.use("/api/v1/campus", campusRoute);
 app.use("/api/v1/rides", ridesRoute);
 app.use("/api/v1/admin", kekeAdminRoute);
 
+// Health check — public, no auth, used by keep-alive cron and uptime monitors
+app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // Error handler
 app.use(errorMiddleware);
 

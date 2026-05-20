@@ -5,6 +5,22 @@ import CampusLocation from "../models/campus-location.model";
 import Campus from "../models/campus.model";
 import Zone from "../models/zone.model";
 
+// GET /api/v1/campus?state=  (lists active campuses; optional state filter for the customer app)
+export const getCampuses = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
+        const { state } = req.query;
+        const filter: Record<string, any> = { isActive: true };
+        if (state && typeof state === "string") {
+            filter.state = { $regex: new RegExp(`^${state}$`, "i") };
+        }
+        const campuses = await Campus.find(filter)
+            .select("_id name code state")
+            .sort({ name: 1 })
+            .lean();
+        res.status(200).json({ success: true, data: campuses });
+    },
+);
+
 // GET /api/v1/campus/locations?campusId=  (campusId optional — falls back to first active campus)
 export const getCampusLocations = CatchAsync(
     async (req: AuthRequest, res: Response) => {
@@ -58,12 +74,12 @@ export const listCampuses = CatchAsync(
 // POST /api/v1/admin/campuses
 export const createCampus = CatchAsync(
     async (req: AuthRequest, res: Response) => {
-        const { name, code } = req.body;
-        if (!name || !code) {
-            res.status(400).json({ message: "name and code are required" });
+        const { name, code, state } = req.body;
+        if (!name || !code || !state) {
+            res.status(400).json({ message: "name, code, and state are required" });
             return;
         }
-        const campus = await Campus.create({ name, code: code.toUpperCase() });
+        const campus = await Campus.create({ name, code: code.toUpperCase(), state });
         res.status(201).json({ success: true, data: campus });
     },
 );
@@ -71,10 +87,14 @@ export const createCampus = CatchAsync(
 // PUT /api/v1/admin/campuses/:id
 export const updateCampus = CatchAsync(
     async (req: AuthRequest, res: Response) => {
-        const { name, isActive } = req.body;
+        const { name, state, isActive } = req.body;
         const campus = await Campus.findByIdAndUpdate(
             req.params.id,
-            { ...(name !== undefined && { name }), ...(isActive !== undefined && { isActive }) },
+            {
+                ...(name !== undefined && { name }),
+                ...(state !== undefined && { state }),
+                ...(isActive !== undefined && { isActive }),
+            },
             { new: true },
         );
         if (!campus) {
