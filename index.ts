@@ -5,7 +5,7 @@ import app from "./src/app";
 import connectDB from "./src/config/db";
 import { initSocket } from "./src/services/socket.service";
 import { startDeliveryWorker } from "./src/workers/delivery.worker";
-import { kekeWorker } from "./src/workers/keke.worker";
+import { startKekeWorker } from "./src/workers/keke.worker";
 import { scheduleReconciliation } from "./src/queues/keke.queue";
 import cron from "node-cron";
 import axios from "axios";
@@ -21,6 +21,7 @@ const startServer = async () => {
 
         // Start background workers
         startDeliveryWorker();
+        startKekeWorker();
         await scheduleReconciliation(); // keke settlement reconciliation every 15 min
 
         server.listen(PORT, "0.0.0.0", () => {

@@ -90,7 +90,7 @@ const processSettlement = async (
     }
 };
 
-export const kekeWorker = new Worker(
+const kekeWorker = new Worker(
     "keke-reconciliation",
     async (job) => {
         if (job.data.type !== "SETTLEMENT_RECONCILIATION") return;
@@ -139,3 +139,8 @@ export const kekeWorker = new Worker(
 kekeWorker.on("failed", (job, err) => {
     console.error(`[KekeWorker] Job ${job?.id} failed:`, err.message);
 });
+
+export const startKekeWorker = () => {
+    console.log("[KekeWorker] Settlement reconciliation worker started");
+    return kekeWorker;
+};
