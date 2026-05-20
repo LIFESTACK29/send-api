@@ -29,7 +29,7 @@ export const createFareRule = CatchAsync(async (req: AuthRequest, res: Response)
         return;
     }
     if (typeof fare !== "number" || fare < 0) {
-        res.status(400).json({ message: "fare must be a non-negative number (in kobo)" });
+        res.status(400).json({ message: "fare must be a non-negative number (in Naira)" });
         return;
     }
 
@@ -38,7 +38,7 @@ export const createFareRule = CatchAsync(async (req: AuthRequest, res: Response)
             campusId,
             pickupZoneId,
             dropoffZoneId,
-            fare,
+            fare: Math.round(fare * 100), // store in kobo
         });
         res.status(201).json({ success: true, data: rule });
     } catch (err: any) {
@@ -58,10 +58,10 @@ export const updateFareRule = CatchAsync(async (req: AuthRequest, res: Response)
     const update: Record<string, any> = {};
     if (fare !== undefined) {
         if (typeof fare !== "number" || fare < 0) {
-            res.status(400).json({ message: "fare must be a non-negative number (in kobo)" });
+            res.status(400).json({ message: "fare must be a non-negative number (in Naira)" });
             return;
         }
-        update.fare = fare;
+        update.fare = Math.round(fare * 100); // store in kobo
     }
     if (isActive !== undefined) update.isActive = isActive;
 

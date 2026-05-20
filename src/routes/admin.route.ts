@@ -8,10 +8,8 @@ import {
 
 const router = Router();
 
-router.use(authenticate, authorize("admin"));
-
-router.get("/riders", getAllRidersForAdmin);
-router.get("/riders/:userId", getRiderVerificationDetail);
-router.put("/riders/:userId/verify", verifyRider);
+router.get("/riders", authenticate, authorize("admin"), getAllRidersForAdmin);
+router.get("/riders/:userId", authenticate, authorize("admin"), getRiderVerificationDetail);
+router.put("/riders/:userId/verify", authenticate, authorize("admin"), verifyRider);
 
 export default router;

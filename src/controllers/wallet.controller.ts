@@ -956,14 +956,16 @@ export const withdraw = async (
             return;
         }
 
-        const { amount } = req.body; // amount in kobo
+        const { amount } = req.body; // amount in Naira — backend converts to kobo
 
-        if (!amount || amount <= 0) {
-            res.status(400).json({ message: "Valid amount is required" });
+        if (!amount || typeof amount !== "number" || amount <= 0) {
+            res.status(400).json({ message: "Valid amount in Naira is required" });
             return;
         }
 
-        if (amount < MIN_WITHDRAWAL_AMOUNT) {
+        const amountKobo = Math.round(amount * 100);
+
+        if (amountKobo < MIN_WITHDRAWAL_AMOUNT) {
             res.status(400).json({
                 message: `Minimum withdrawal amount is ₦${MIN_WITHDRAWAL_AMOUNT / 100}`,
             });
@@ -979,8 +981,8 @@ export const withdraw = async (
 
         // Atomically debit wallet — only succeeds if balance is sufficient
         const wallet = await Wallet.findOneAndUpdate(
-            { userId, balance: { $gte: amount } },
-            { $inc: { balance: -amount } },
+            { userId, balance: { $gte: amountKobo } },
+            { $inc: { balance: -amountKobo } },
             { new: true },
         );
 
@@ -1001,7 +1003,7 @@ export const withdraw = async (
             userId,
             type: "debit",
             source: "withdrawal",
-            amount,
+            amount: amountKobo,
             reference,
             idempotencyKey,
             status: "pending",
@@ -1016,14 +1018,14 @@ export const withdraw = async (
         // Initiate Paystack transfer
         try {
             await paystackService.initiateTransfer(
-                amount,
+                amountKobo,
                 bankAccount.paystackRecipientCode,
                 `RahaSend withdrawal - ${reference}`,
                 reference,
             );
         } catch (transferError: any) {
             // Refund atomically and mark transaction failed
-            await Wallet.findOneAndUpdate({ userId }, { $inc: { balance: amount } });
+            await Wallet.findOneAndUpdate({ userId }, { $inc: { balance: amountKobo } });
             transaction.status = "failed";
             await transaction.save();
 
