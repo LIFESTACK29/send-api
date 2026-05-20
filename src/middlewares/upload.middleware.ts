@@ -11,19 +11,16 @@ import crypto from "crypto";
 import path from "path";
 
 const s3 = new S3Client({
-    region: process.env.SCALEWAY_REGION || "fr-par",
-    endpoint: `https://s3.${process.env.SCALEWAY_REGION || "fr-par"}.scw.cloud`,
+    region: "auto",
+    endpoint: `https://${process.env.CF_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
-        accessKeyId: process.env.SCALEWAY_ACCESS_KEY || "",
-        secretAccessKey: process.env.SCALEWAY_SECRET_KEY || "",
+        accessKeyId: process.env.CF_R2_ACCESS_KEY_ID || "",
+        secretAccessKey: process.env.CF_R2_SECRET_ACCESS_KEY || "",
     },
 });
 
-const BUCKET = process.env.SCALEWAY_BUCKET_NAME || "raha";
-const SCW_REGION = process.env.SCALEWAY_REGION || "fr-par";
-const BASE_URL =
-    process.env.SCALEWAY_PUBLIC_URL ||
-    `https://${BUCKET}.s3.${SCW_REGION}.scw.cloud`;
+const BUCKET = process.env.CF_R2_BUCKET_NAME || "raha";
+const BASE_URL = process.env.CF_R2_PUBLIC_URL || "";
 
 // ─── Magic-byte signatures for allowed image types ───────────────────────────
 const MAGIC: Array<{ mime: string; bytes: number[]; offset?: number }> = [
