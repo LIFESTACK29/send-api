@@ -19,3 +19,4 @@ function ping() {
 console.log(`Keep-alive started — pinging ${URL} every 10 minutes`);
 ping();
 setInterval(ping, INTERVAL_MS);
+// https://api.mypassa.xyz/webhooks/paystack

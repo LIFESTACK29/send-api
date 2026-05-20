@@ -12,11 +12,14 @@ function validateEnv(): void {
         "MONGO_URI",
         "JWT_SECRET",
         "PAYSTACK_SECRET_KEY",
-        "SCALEWAY_ACCESS_KEY",
-        "SCALEWAY_SECRET_KEY",
+        "RESEND_API_KEY",
         "FIREBASE_PROJECT_ID",
         "FIREBASE_CLIENT_EMAIL",
         "FIREBASE_PRIVATE_KEY",
+        "CF_R2_ACCOUNT_ID",
+        "CF_R2_ACCESS_KEY_ID",
+        "CF_R2_SECRET_ACCESS_KEY",
+        "CF_R2_BUCKET_NAME",
     ];
 
     for (const key of required) {
