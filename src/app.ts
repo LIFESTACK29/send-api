@@ -20,7 +20,13 @@ const app = express();
 // Security headers
 app.use(helmet());
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+    : true;
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+
+// Preserve raw body for Paystack webhook signature verification (must be before express.json())
+app.use("/api/v1/wallet/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

@@ -376,10 +376,11 @@ export const handleWebhook = async (
     next: NextFunction,
 ): Promise<void> => {
     try {
-        // 1. Verify Paystack signature
+        // 1. Verify Paystack signature against the raw body bytes (not re-serialized JSON)
+        const rawBody = req.body as Buffer;
         const hash = crypto
             .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY as string)
-            .update(JSON.stringify(req.body))
+            .update(rawBody)
             .digest("hex");
 
         const signature = req.get("x-paystack-signature");
@@ -388,7 +389,7 @@ export const handleWebhook = async (
             return;
         }
 
-        const payload = req.body as unknown as PaystackWebhookPayload;
+        const payload = JSON.parse(rawBody.toString()) as PaystackWebhookPayload;
         const { event, data } = payload;
         // 2. Audit Log (as requested)
         await Log.create({

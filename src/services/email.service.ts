@@ -1,13 +1,6 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-const transport = nodemailer.createTransport({
-    host: "sandbox.smtp.mailtrap.io",
-    port: 2525,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD,
-    },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
  * Send OTP verification email
@@ -17,8 +10,8 @@ export const sendOtpEmail = async (
     otpCode: string,
 ): Promise<void> => {
     try {
-        await transport.sendMail({
-            from: '"RahaSend" <noreply@rahasend.com>',
+        await resend.emails.send({
+            from: "RahaSend <noreply@rahasend.com>",
             to,
             subject: "Your RahaSend Verification Code",
             html: `
@@ -38,7 +31,6 @@ export const sendOtpEmail = async (
                 </div>
             `,
         });
-      
     } catch (error) {
         console.error("❌ Failed to send OTP email:", error);
         throw new Error("Failed to send verification email");
