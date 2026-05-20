@@ -33,13 +33,10 @@ export const sendOtpEmail = async (
         });
 
         if (error) {
-            console.error("❌ Resend error:", JSON.stringify(error, null, 2));
             throw new Error("Failed to send verification email");
         }
 
-        console.log("✅ OTP email sent:", data?.id);
     } catch (error) {
-        console.error("❌ Failed to send OTP email:", error);
         throw new Error("Failed to send verification email");
     }
 };

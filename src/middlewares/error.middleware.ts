@@ -12,9 +12,6 @@ const errorMiddleware = (
 ) => {
     const statusCode = err.statusCode || 500;
 
-    // Always log the full error internally
-    console.error(`[ERROR] ${statusCode}: ${err.message}`, err.stack);
-
     // Never leak internal details for server errors
     const clientMessage =
         statusCode < 500

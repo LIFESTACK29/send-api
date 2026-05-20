@@ -51,7 +51,6 @@ export const getProfile: RequestHandler = async (
             user: await buildUserResponse(user),
         });
     } catch (error: any) {
-        console.error("Error in getProfile:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -93,7 +92,6 @@ export const updateProfile: RequestHandler = async (
             user: await buildUserResponse(user),
         });
     } catch (error: any) {
-        console.error("Error in updateProfile:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -138,7 +136,6 @@ export const addAddress: RequestHandler = async (
             user: await buildUserResponse(user),
         });
     } catch (error: any) {
-        console.error("Error in addAddress:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -199,7 +196,6 @@ export const editAddress: RequestHandler = async (
             user: await buildUserResponse(user),
         });
     } catch (error: any) {
-        console.error("Error in editAddress:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -240,7 +236,6 @@ export const deleteAddress: RequestHandler = async (
             user: await buildUserResponse(user),
         });
     } catch (error: any) {
-        console.error("Error in deleteAddress:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -283,7 +278,6 @@ export const updatePushToken: RequestHandler = async (
             message: "Push token updated successfully",
         });
     } catch (error: any) {
-        console.error("Error in updatePushToken:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };

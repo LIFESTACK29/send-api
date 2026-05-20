@@ -21,5 +21,4 @@ export const scheduleReconciliation = async () => {
             jobId: "settlement-reconciliation-recurring",
         },
     );
-    console.log("[KekeQueue] Reconciliation job scheduled (every 15 min)");
 };

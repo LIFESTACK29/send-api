@@ -95,7 +95,6 @@ const kekeWorker = new Worker(
     async (job) => {
         if (job.data.type !== "SETTLEMENT_RECONCILIATION") return;
 
-        console.log("[KekeWorker] Running settlement reconciliation");
 
         const now = new Date();
         const processingCutoff = new Date(now.getTime() - 5 * 60 * 1000);    // > 5 min ago
@@ -114,7 +113,6 @@ const kekeWorker = new Worker(
         });
 
         const toVerify = [...processing, ...initiated];
-        console.log(`[KekeWorker] Verifying ${toVerify.length} settlement(s)`);
 
         for (const settlement of toVerify) {
             try {
@@ -125,22 +123,14 @@ const kekeWorker = new Worker(
                     transferData?.status,
                     transferData?.reason,
                 );
-            } catch (err: any) {
-                console.error(
-                    `[KekeWorker] Error verifying settlement ${settlement._id}:`,
-                    err.message,
-                );
+            } catch {
+                // settlement verification errors are retried on next reconciliation run
             }
         }
     },
     { connection: redisConnection, concurrency: 1 },
 );
 
-kekeWorker.on("failed", (job, err) => {
-    console.error(`[KekeWorker] Job ${job?.id} failed:`, err.message);
-});
+kekeWorker.on("failed", () => {});
 
-export const startKekeWorker = () => {
-    console.log("[KekeWorker] Settlement reconciliation worker started");
-    return kekeWorker;
-};
+export const startKekeWorker = () => kekeWorker;

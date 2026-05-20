@@ -10,12 +10,6 @@ export const redisConnection = new Redis(REDIS_URL, {
     tls: REDIS_URL.startsWith("rediss://") ? {} : undefined,
 });
 
-redisConnection.on("connect", () => {
-    console.log("✅ Connected to Redis");
-});
-
-redisConnection.on("error", (err) => {
-    console.error("❌ Redis connection error:", err);
-});
+redisConnection.on("error", () => {});
 
 export default redisConnection;

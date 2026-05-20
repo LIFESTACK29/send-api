@@ -434,7 +434,6 @@ export const handleWebhook = async (
         res.status(200).json({ message: "Webhook received" });
     } catch (error) {
         // Return 500 so Paystack retries — do NOT swallow processing errors with 200
-        console.error("[Webhook] Processing error:", error);
         res.status(500).json({ message: "Webhook processing failed" });
     }
 };
@@ -736,9 +735,6 @@ const handleAccountAssignSuccess = async (event: string, data: DedicatedAccountD
  * Handle DVA Assign Failed
  */
 const handleAccountAssignFailed = async (data: DedicatedAccountData) => {
-    console.error(
-        `[Webhook] DVA assignment failed for ${data.customer.email}`,
-    );
     await User.findOneAndUpdate(
         { email: data.customer.email },
         { walletProvisioningStatus: "failed" },

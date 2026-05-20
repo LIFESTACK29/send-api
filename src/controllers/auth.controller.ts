@@ -32,7 +32,6 @@ const createAndSendOtp = async (
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    console.log(`[OTP] ${email} → ${code}`);
 
     // Store hashed code — plain code only lives in the email
     await Otp.create({ userId, code: hashOtp(code), expiresAt });
@@ -141,7 +140,6 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
             userId: user._id,
         });
     } catch (error: any) {
-        console.error("Error in register:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -217,7 +215,6 @@ export const verifyOtp: RequestHandler = async (
             user: await buildUserResponse(syncedUser),
         });
     } catch (error: any) {
-        console.error("Error in verifyOtp:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -247,7 +244,6 @@ export const resendOtp: RequestHandler = async (
                 "If your email is registered and pending verification, a new OTP has been sent.",
         });
     } catch (error: any) {
-        console.error("Error in resendOtp:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -305,7 +301,6 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
             user: userResponse,
         });
     } catch (error: any) {
-        console.error("Error in login:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -368,7 +363,6 @@ export const adminLogin: RequestHandler = async (
             user: userResponse,
         });
     } catch (error: any) {
-        console.error("Error in adminLogin:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -389,7 +383,6 @@ export const logout: RequestHandler = async (
 
         res.status(200).json({ message: "Logged out successfully" });
     } catch (error: any) {
-        console.error("Error in logout:", error);
         res.status(200).json({ message: "Logged out successfully" });
     }
 };
@@ -410,7 +403,6 @@ export const getMe: RequestHandler = async (
 
         res.status(200).json({ user: await buildUserResponse(user) });
     } catch (error: any) {
-        console.error("Error in getMe:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };

@@ -17,8 +17,8 @@ import { getUserId } from "../middlewares/auth.middleware";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { processDeliveryPayment } from "./wallet.controller";
 
-const BASE_FEE_NAIRA = 100;
-const PER_KM_FEE_NAIRA = 0;
+const BASE_FEE_NAIRA = 1000;
+const PER_KM_FEE_NAIRA = 200;
 const MATCH_RADIUS_METERS = 5000;
 const MATCH_TIMEOUT_SECONDS = 60;
 const RIDER_HOME_HISTORY_LIMIT = 20;

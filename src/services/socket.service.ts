@@ -89,9 +89,7 @@ export const initSocket = (server: HttpServer) => {
         if (role === "rider") {
             socket.join("riders-pool");
 
-            User.findByIdAndUpdate(userId, { isOnline: true }).catch((err) =>
-                console.error("Error setting rider online:", err),
-            );
+            User.findByIdAndUpdate(userId, { isOnline: true }).catch(() => {});
             socket.emit("rider_presence", { status: "online", riderId: userId });
 
             // Location update — validate coords, filter broadcasts to nearby customers
@@ -131,7 +129,6 @@ export const initSocket = (server: HttpServer) => {
                             }
                         }
                     } catch (error) {
-                        console.error("Error updating rider location:", error);
                     }
                 },
             );
@@ -150,7 +147,6 @@ export const initSocket = (server: HttpServer) => {
                             });
                         }
                     } catch (error) {
-                        console.error("Error toggling rider online status:", error);
                     }
                 },
             );
@@ -218,9 +214,7 @@ export const initSocket = (server: HttpServer) => {
                                 })),
                             );
                         })
-                        .catch((err) =>
-                            console.error("Error fetching initial riders:", err),
-                        );
+                        .catch(() => {});
                 },
             );
 
@@ -239,7 +233,6 @@ export const initSocket = (server: HttpServer) => {
                 try {
                     await User.findByIdAndUpdate(userId, { isOnline: false });
                 } catch (error) {
-                    console.error("Error setting rider offline on disconnect:", error);
                 }
             }
         });

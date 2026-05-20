@@ -42,7 +42,6 @@ export const getOnboardingState: RequestHandler = async (
             },
         });
     } catch (error: any) {
-        console.error("Error in getOnboardingState:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };

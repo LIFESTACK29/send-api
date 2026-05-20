@@ -24,11 +24,7 @@ const startServer = async () => {
         startKekeWorker();
         await scheduleReconciliation(); // keke settlement reconciliation every 15 min
 
-        server.listen(PORT, "0.0.0.0", () => {
-            console.log(
-                `🚀 Server is running on port ${PORT} in ${app.get("env")} mode`,
-            );
-        });
+        server.listen(PORT, "0.0.0.0");
 
         // Ping /health every 20 minutes to prevent Render free-tier sleep
         const selfUrl = process.env.RENDER_EXTERNAL_URL;
@@ -36,14 +32,11 @@ const startServer = async () => {
             cron.schedule("*/20 * * * *", async () => {
                 try {
                     await axios.get(`${selfUrl}/health`, { timeout: 10000 });
-                    console.log("🏓 Keep-alive ping sent");
-                } catch (err: any) {
-                    console.warn("⚠️ Keep-alive ping failed:", err.message);
+                } catch {
                 }
             });
         }
     } catch (error) {
-        console.log("❌ Failed to start the server:", error);
         process.exit(1);
     }
 };

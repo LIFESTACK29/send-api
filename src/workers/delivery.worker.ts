@@ -24,9 +24,6 @@ export const startDeliveryWorker = () => {
                 matchRequestId,
                 checkCount = 0,
             } = job.data || {};
-            console.log(
-                `[Worker] Processing ${type || "UNKNOWN"} | delivery=${deliveryId || "-"} | match=${matchRequestId || "-"}`,
-            );
 
             if (type === "MATCH_REQUEST_BROADCAST") {
                 const matchRequest =
@@ -213,15 +210,5 @@ export const startDeliveryWorker = () => {
         { connection: redisConnection },
     );
 
-    worker.on("completed", (job) => {
-        console.log(`[Worker] Job ${job.id} completed!`);
-    });
-
-    worker.on("failed", (job, err) => {
-        console.error(
-            `[Worker] Job ${job?.id} failed with error: ${err.message}`,
-        );
-    });
-
-    console.log("🏁 Delivery matching worker started");
+    worker.on("failed", () => {});
 };
