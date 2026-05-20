@@ -10,8 +10,8 @@ export const sendOtpEmail = async (
     otpCode: string,
 ): Promise<void> => {
     try {
-        await resend.emails.send({
-            from: "RahaSend <noreply@rahasend.com>",
+        const { data, error } = await resend.emails.send({
+            from: "RahaSend <noreply@shutupnrave.com.ng>",
             to,
             subject: "Your RahaSend Verification Code",
             html: `
@@ -31,6 +31,13 @@ export const sendOtpEmail = async (
                 </div>
             `,
         });
+
+        if (error) {
+            console.error("❌ Resend error:", JSON.stringify(error, null, 2));
+            throw new Error("Failed to send verification email");
+        }
+
+        console.log("✅ OTP email sent:", data?.id);
     } catch (error) {
         console.error("❌ Failed to send OTP email:", error);
         throw new Error("Failed to send verification email");

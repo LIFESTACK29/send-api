@@ -32,6 +32,8 @@ const createAndSendOtp = async (
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
+    console.log(`[OTP] ${email} → ${code}`);
+
     // Store hashed code — plain code only lives in the email
     await Otp.create({ userId, code: hashOtp(code), expiresAt });
     await sendOtpEmail(email, code);
