@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IWallet extends Document {
     userId: mongoose.Types.ObjectId;
-    balance: number; // stored in kobo (100 kobo = ₦1)
+    balance: number;
     paystackCustomerCode: string;
     dedicatedAccountNumber?: string;
     dedicatedBankName?: string;

@@ -12,27 +12,15 @@ import {
 
 const REQUIRED_DOCUMENTS = [
     {
-        type: "DRIVING_LICENSE",
-        label: "Driving License",
-        description: "Valid government-issued driving license",
+        type: "NIN_DOCUMENT",
+        label: "NIN Document",
+        description: "National Identification Number document",
         required: true,
     },
     {
-        type: "GOVERNMENT_ID",
-        label: "Government ID",
-        description: "Passport, National ID, or State ID",
-        required: true,
-    },
-    {
-        type: "INSURANCE",
-        label: "Insurance Certificate",
-        description: "Vehicle insurance document",
-        required: true,
-    },
-    {
-        type: "REGISTRATION",
-        label: "Vehicle Registration",
-        description: "Vehicle registration certificate",
+        type: "RIDERS_PERMIT",
+        label: "Rider's Permit",
+        description: "Valid government-issued rider's permit",
         required: true,
     },
 ];
@@ -69,14 +57,7 @@ export const uploadDocument: RequestHandler = CatchAsync(
             return;
         }
 
-        if (
-            ![
-                "DRIVING_LICENSE",
-                "GOVERNMENT_ID",
-                "INSURANCE",
-                "REGISTRATION",
-            ].includes(documentType)
-        ) {
+        if (!["NIN_DOCUMENT", "RIDERS_PERMIT"].includes(documentType)) {
             res.status(400).json({
                 success: false,
                 message: "Invalid document type",

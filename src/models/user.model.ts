@@ -23,6 +23,7 @@ export interface IKekeRiderProfile {
 export interface IUser extends Document {
     firstName: string;
     lastName: string;
+    middleName?: string;
     email: string;
     phoneNumber: string;
     password: string;
@@ -47,6 +48,7 @@ export interface IUser extends Document {
     onboardingStage?:
         | "email_pending"
         | "profile_pending"
+        | "personal_details_pending"
         | "vehicle_pending"
         | "documents_pending"
         | "review_pending"
@@ -57,6 +59,11 @@ export interface IUser extends Document {
     profileImageUrl?: string;
     verificationNotes?: string;
     walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
+    // Rider personal details
+    dateOfBirth?: Date;
+    ninNumber?: string;
+    stateOfResidence?: string;
+    operationalArea?: string;
     // Keke rider-specific fields
     kekeRiderProfile?: IKekeRiderProfile;
     comparePassword(candidatePassword: string): Promise<boolean>;
@@ -72,6 +79,7 @@ const UserSchema: Schema = new Schema(
     {
         firstName: { type: String, required: true },
         lastName: { type: String, required: true },
+        middleName: { type: String },
         email: { type: String, required: true, unique: true },
         phoneNumber: { type: String, required: true },
         password: { type: String, required: true, select: false },
@@ -111,6 +119,7 @@ const UserSchema: Schema = new Schema(
             enum: [
                 "email_pending",
                 "profile_pending",
+                "personal_details_pending",
                 "vehicle_pending",
                 "documents_pending",
                 "review_pending",
@@ -127,6 +136,10 @@ const UserSchema: Schema = new Schema(
         },
         profileImageUrl: { type: String },
         verificationNotes: { type: String },
+        dateOfBirth: { type: Date },
+        ninNumber: { type: String },
+        stateOfResidence: { type: String },
+        operationalArea: { type: String },
         walletProvisioningStatus: {
             type: String,
             enum: ["not_started", "creating", "active", "failed"],

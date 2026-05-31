@@ -7,6 +7,7 @@ import {
     getVehicle,
     getOnboardingStatus,
 } from "../controllers/vehicle.controller";
+import { updatePersonalDetails } from "../controllers/rider.controller";
 
 const router = Router();
 
@@ -21,6 +22,14 @@ router.get(
     authenticate,
     authorizeSelfOrAdmin(),
     getVehicle,
+);
+
+// Personal details
+router.patch(
+    "/:userId/personal-details",
+    authenticate,
+    authorizeSelfOrAdmin(),
+    updatePersonalDetails,
 );
 
 // Onboarding status

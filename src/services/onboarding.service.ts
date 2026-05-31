@@ -1,10 +1,12 @@
 import User, { IUser } from "../models/user.model";
 import Vehicle from "../models/vehicle.model";
+import Document from "../models/document.model";
 import { ensureWalletForUser } from "./wallet.service";
 
 export type OnboardingStage =
     | "email_pending"
     | "profile_pending"
+    | "personal_details_pending"
     | "vehicle_pending"
     | "approved"
     | "rejected";
@@ -12,6 +14,7 @@ export type OnboardingStage =
 type OnboardingNextStep =
     | "email_otp"
     | "profile_image"
+    | "personal_details"
     | "vehicle_selection"
     | "home";
 
@@ -32,7 +35,9 @@ export interface UserAccessState {
     onboardingProgress?: {
         emailVerified: boolean;
         profileCompleted: boolean;
+        personalDetailsCompleted: boolean;
         vehicleSelected: boolean;
+        documentsUploaded: boolean;
     };
     completionPercentage?: number;
 }
@@ -49,6 +54,7 @@ const normalizeOnboardingStage = (
     if (
         stage === "email_pending" ||
         stage === "profile_pending" ||
+        stage === "personal_details_pending" ||
         stage === "vehicle_pending" ||
         stage === "approved" ||
         stage === "rejected"
@@ -72,13 +78,16 @@ const mapVerificationStatus = (
 const inferRiderStage = (params: {
     user: IUser;
     hasVehicle: boolean;
+    hasPersonalDetails: boolean;
+    hasRequiredDocs: boolean;
 }): OnboardingStage => {
-    const { user, hasVehicle } = params;
+    const { user, hasVehicle, hasPersonalDetails, hasRequiredDocs } = params;
 
     if (!user.isOnboarded) return "email_pending";
     if (user.riderStatus === "rejected") return "rejected";
     if (!user.profileImageUrl) return "profile_pending";
-    if (!hasVehicle) return "vehicle_pending";
+    if (!hasPersonalDetails) return "personal_details_pending";
+    if (!hasVehicle || !hasRequiredDocs) return "vehicle_pending";
     return "approved";
 };
 
@@ -103,14 +112,29 @@ export const syncUserOnboardingState = async (
         return user;
     }
 
-    const vehicles = await Vehicle.find({ userId });
+    const [vehicles, documents] = await Promise.all([
+        Vehicle.find({ userId }),
+        Document.find({ userId }),
+    ]);
 
     const hasVehicle = vehicles.length > 0;
-    const isComplete = Boolean(user.profileImageUrl) && hasVehicle;
+    const hasPersonalDetails = Boolean(
+        user.ninNumber && user.stateOfResidence && user.operationalArea,
+    );
+    const hasRequiredDocs = ["NIN_DOCUMENT", "RIDERS_PERMIT"].every((type) =>
+        documents.some((d) => d.documentType === type),
+    );
+    const isComplete =
+        Boolean(user.profileImageUrl) &&
+        hasPersonalDetails &&
+        hasVehicle &&
+        hasRequiredDocs;
 
     const inferredStage = inferRiderStage({
         user,
         hasVehicle,
+        hasPersonalDetails,
+        hasRequiredDocs,
     });
 
     if (isComplete && user.riderStatus !== "rejected") {
@@ -165,14 +189,27 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
         };
     }
 
-    const vehicles = await Vehicle.find({ userId: hydratedUser._id });
+    const [vehicles, documents] = await Promise.all([
+        Vehicle.find({ userId: hydratedUser._id }),
+        Document.find({ userId: hydratedUser._id }),
+    ]);
 
     const hasVehicle = vehicles.length > 0;
+    const hasPersonalDetails = Boolean(
+        hydratedUser.ninNumber &&
+        hydratedUser.stateOfResidence &&
+        hydratedUser.operationalArea,
+    );
+    const hasRequiredDocs = ["NIN_DOCUMENT", "RIDERS_PERMIT"].every((type) =>
+        documents.some((d) => d.documentType === type),
+    );
 
     const onboardingProgress = {
         emailVerified: hydratedUser.isOnboarded,
         profileCompleted: Boolean(hydratedUser.profileImageUrl),
+        personalDetailsCompleted: hasPersonalDetails,
         vehicleSelected: hasVehicle,
+        documentsUploaded: hasRequiredDocs,
     };
 
     const stage = normalizeOnboardingStage(hydratedUser.onboardingStage);
@@ -180,12 +217,16 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
     const onboardingComplete = stage === "approved" || stage === "rejected";
 
     if (!onboardingComplete) {
-        const currentStep: OnboardingNextStep =
-            stage === "email_pending"
-                ? "email_otp"
-                : stage === "profile_pending"
-                  ? "profile_image"
-                  : "vehicle_selection";
+        let currentStep: OnboardingNextStep;
+        if (stage === "email_pending") {
+            currentStep = "email_otp";
+        } else if (stage === "profile_pending") {
+            currentStep = "profile_image";
+        } else if (stage === "personal_details_pending") {
+            currentStep = "personal_details";
+        } else {
+            currentStep = "vehicle_selection";
+        }
 
         return {
             onboardingStage: stage,
@@ -196,12 +237,7 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
                 stage === "email_pending"
                     ? "email_verification_required"
                     : "onboarding_incomplete",
-            nextStep:
-                stage === "email_pending"
-                    ? "email_otp"
-                    : stage === "profile_pending"
-                      ? "profile_image"
-                      : "vehicle_selection",
+            nextStep: currentStep,
             currentStep,
             riderStatus: hydratedUser.riderStatus,
             onboardingProgress,

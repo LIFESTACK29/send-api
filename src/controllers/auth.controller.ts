@@ -63,6 +63,7 @@ const buildUserResponse = async (user: any) => {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
+        middleName: user.middleName,
         email: user.email,
         phoneNumber: user.phoneNumber,
         role: user.role,
@@ -72,6 +73,10 @@ const buildUserResponse = async (user: any) => {
         verificationStatus: user.verificationStatus,
         profileImageUrl: user.profileImageUrl,
         verificationNotes: user.verificationNotes,
+        dateOfBirth: user.dateOfBirth,
+        ninNumber: user.ninNumber,
+        stateOfResidence: user.stateOfResidence,
+        operationalArea: user.operationalArea,
         accessState,
     };
 };
