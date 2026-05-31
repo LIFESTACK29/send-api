@@ -59,12 +59,10 @@ export interface IUser extends Document {
     profileImageUrl?: string;
     verificationNotes?: string;
     walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
-    // Rider personal details
     dateOfBirth?: Date;
     ninNumber?: string;
     stateOfResidence?: string;
     operationalArea?: string;
-    // Keke rider-specific fields
     kekeRiderProfile?: IKekeRiderProfile;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }

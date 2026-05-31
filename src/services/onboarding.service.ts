@@ -8,6 +8,9 @@ export type OnboardingStage =
     | "profile_pending"
     | "personal_details_pending"
     | "vehicle_pending"
+    | "documents_pending"
+    | "review_pending"
+    | "pending_admin_approval"
     | "approved"
     | "rejected";
 
@@ -16,6 +19,10 @@ type OnboardingNextStep =
     | "profile_image"
     | "personal_details"
     | "vehicle_selection"
+    | "vehicle_image"
+    | "documents"
+    | "submit_verification"
+    | "pending_admin_approval"
     | "home";
 
 type AccessStatus =
@@ -56,6 +63,9 @@ const normalizeOnboardingStage = (
         stage === "profile_pending" ||
         stage === "personal_details_pending" ||
         stage === "vehicle_pending" ||
+        stage === "documents_pending" ||
+        stage === "review_pending" ||
+        stage === "pending_admin_approval" ||
         stage === "approved" ||
         stage === "rejected"
     ) {
@@ -80,14 +90,18 @@ const inferRiderStage = (params: {
     hasVehicle: boolean;
     hasPersonalDetails: boolean;
     hasRequiredDocs: boolean;
+    hasVehicleImage: boolean;
 }): OnboardingStage => {
-    const { user, hasVehicle, hasPersonalDetails, hasRequiredDocs } = params;
+    const { user, hasVehicle, hasPersonalDetails, hasRequiredDocs, hasVehicleImage } = params;
 
     if (!user.isOnboarded) return "email_pending";
     if (user.riderStatus === "rejected") return "rejected";
     if (!user.profileImageUrl) return "profile_pending";
     if (!hasPersonalDetails) return "personal_details_pending";
-    if (!hasVehicle || !hasRequiredDocs) return "vehicle_pending";
+    if (!hasVehicle || !hasVehicleImage) return "vehicle_pending";
+    if (!hasRequiredDocs) return "documents_pending";
+    if (user.riderStatus === "pending_verification") return "review_pending";
+    if (user.riderStatus === "pending_admin_approval") return "pending_admin_approval";
     return "approved";
 };
 
@@ -118,6 +132,7 @@ export const syncUserOnboardingState = async (
     ]);
 
     const hasVehicle = vehicles.length > 0;
+    const hasVehicleImage = vehicles.some((v) => v.imageUrl);
     const hasPersonalDetails = Boolean(
         user.ninNumber && user.stateOfResidence && user.operationalArea,
     );
@@ -128,6 +143,7 @@ export const syncUserOnboardingState = async (
         Boolean(user.profileImageUrl) &&
         hasPersonalDetails &&
         hasVehicle &&
+        hasVehicleImage &&
         hasRequiredDocs;
 
     const inferredStage = inferRiderStage({
@@ -135,6 +151,7 @@ export const syncUserOnboardingState = async (
         hasVehicle,
         hasPersonalDetails,
         hasRequiredDocs,
+        hasVehicleImage,
     });
 
     if (isComplete && user.riderStatus !== "rejected") {
@@ -195,6 +212,7 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
     ]);
 
     const hasVehicle = vehicles.length > 0;
+    const hasVehicleImage = vehicles.some((v) => v.imageUrl);
     const hasPersonalDetails = Boolean(
         hydratedUser.ninNumber &&
         hydratedUser.stateOfResidence &&
@@ -209,12 +227,17 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
         profileCompleted: Boolean(hydratedUser.profileImageUrl),
         personalDetailsCompleted: hasPersonalDetails,
         vehicleSelected: hasVehicle,
+        vehicleImageUploaded: hasVehicleImage,
         documentsUploaded: hasRequiredDocs,
     };
 
     const stage = normalizeOnboardingStage(hydratedUser.onboardingStage);
 
-    const onboardingComplete = stage === "approved" || stage === "rejected";
+    const onboardingComplete =
+        stage === "approved" ||
+        stage === "rejected" ||
+        stage === "pending_admin_approval" ||
+        stage === "review_pending";
 
     if (!onboardingComplete) {
         let currentStep: OnboardingNextStep;
@@ -224,8 +247,18 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
             currentStep = "profile_image";
         } else if (stage === "personal_details_pending") {
             currentStep = "personal_details";
+        } else if (stage === "vehicle_pending") {
+            if (!hasVehicle) {
+                currentStep = "vehicle_selection";
+            } else if (!hasVehicleImage) {
+                currentStep = "vehicle_image";
+            } else {
+                currentStep = "documents";
+            }
+        } else if (stage === "documents_pending") {
+            currentStep = "documents";
         } else {
-            currentStep = "vehicle_selection";
+            currentStep = "submit_verification";
         }
 
         return {

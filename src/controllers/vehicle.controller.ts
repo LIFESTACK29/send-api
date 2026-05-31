@@ -155,6 +155,56 @@ export const getVehicle: RequestHandler = CatchAsync(
 );
 
 /**
+ * @desc    Upload vehicle image
+ * @route   POST /api/v1/riders/:userId/vehicles/:vehicleId/image
+ * @access  Private
+ */
+export const uploadVehicleImage: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
+        const { userId, vehicleId } = req.params;
+
+        if (!req.file) {
+            res.status(400).json({
+                success: false,
+                message: "Vehicle image is required",
+            });
+            return;
+        }
+
+        const vehicle = await Vehicle.findOne({
+            _id: vehicleId,
+            userId,
+        });
+
+        if (!vehicle) {
+            res.status(404).json({
+                success: false,
+                message: "Vehicle not found",
+            });
+            return;
+        }
+
+        const imageUrl = `/uploads/vehicles/${req.file.filename}`;
+        vehicle.imageUrl = imageUrl;
+        await vehicle.save();
+
+        await syncUserOnboardingState(userId);
+        const accessState = await getRiderOnboardingState(userId);
+
+        res.status(200).json({
+            success: true,
+            message: "Vehicle image uploaded successfully",
+            data: {
+                vehicleId: vehicle._id,
+                imageUrl: vehicle.imageUrl,
+                nextStep: accessState.nextStep,
+                accessState,
+            },
+        });
+    },
+);
+
+/**
  * @desc    Get rider onboarding status
  * @route   GET /api/v1/riders/:userId/onboarding-status
  * @access  Private

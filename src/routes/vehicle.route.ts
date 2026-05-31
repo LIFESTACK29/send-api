@@ -6,8 +6,10 @@ import {
     getUserVehicles,
     getVehicle,
     getOnboardingStatus,
+    uploadVehicleImage,
 } from "../controllers/vehicle.controller";
-import { updatePersonalDetails } from "../controllers/rider.controller";
+import { updatePersonalDetails, submitForVerification } from "../controllers/rider.controller";
+import { upload } from "../middlewares/upload.middleware";
 
 const router = Router();
 
@@ -23,6 +25,13 @@ router.get(
     authorizeSelfOrAdmin(),
     getVehicle,
 );
+router.post(
+    "/:userId/vehicles/:vehicleId/image",
+    authenticate,
+    authorizeSelfOrAdmin(),
+    upload.single("vehicleImage"),
+    uploadVehicleImage,
+);
 
 // Personal details
 router.patch(
@@ -30,6 +39,14 @@ router.patch(
     authenticate,
     authorizeSelfOrAdmin(),
     updatePersonalDetails,
+);
+
+// Submit for verification
+router.post(
+    "/:userId/submit-verification",
+    authenticate,
+    authorizeSelfOrAdmin(),
+    submitForVerification,
 );
 
 // Onboarding status
