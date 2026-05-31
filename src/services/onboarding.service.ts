@@ -101,7 +101,6 @@ const inferRiderStage = (params: {
     if (!hasVehicle || !hasVehicleImage) return "vehicle_pending";
     if (!hasRequiredDocs) return "documents_pending";
     if (user.riderStatus === "pending_verification") return "review_pending";
-    if (user.riderStatus === "pending_admin_approval") return "pending_admin_approval";
     return "approved";
 };
 
