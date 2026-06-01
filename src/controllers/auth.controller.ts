@@ -8,10 +8,7 @@ import { AuthRequest } from "../types/user.type";
 import { uploadToStorage } from "../middlewares/upload.middleware";
 import { CatchAsync } from "../utils/catchasync.util";
 import { generateJti, denyToken } from "../utils/token-denylist.util";
-import {
-    getUserAccessState,
-    syncUserOnboardingState,
-} from "../services/onboarding.service";
+import { getUserAccessState } from "../services/onboarding.service";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,7 +28,6 @@ const createAndSendOtp = async (
 
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-
 
     // Store hashed code — plain code only lives in the email
     await Otp.create({ userId, code: hashOtp(code), expiresAt });
@@ -59,7 +55,7 @@ const validatePasswordStrength = (password: string): string | null => {
 
 const buildUserResponse = async (user: any) => {
     const accessState = await getUserAccessState(user);
-    return {
+    const response: any = {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -68,23 +64,25 @@ const buildUserResponse = async (user: any) => {
         phoneNumber: user.phoneNumber,
         role: user.role,
         isOnboarded: user.isOnboarded,
-        riderStatus: user.riderStatus,
-        onboardingStage: user.onboardingStage,
-        verificationStatus: user.verificationStatus,
-        profileImageUrl: user.profileImageUrl,
-        verificationNotes: user.verificationNotes,
-        dateOfBirth: user.dateOfBirth,
-        ninNumber: user.ninNumber,
-        stateOfResidence: user.stateOfResidence,
-        operationalArea: user.operationalArea,
         accessState,
     };
+
+    // Include rider details if user is a rider
+    if (user.role === "rider" && user.riderDetails) {
+        response.riderDetails = {
+            nin: user.riderDetails.nin,
+            vehicleType: user.riderDetails.vehicleType,
+            submittedAt: user.riderDetails.submittedAt,
+        };
+    }
+
+    return response;
 };
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 
-export const register: RequestHandler = async (req: Request, res: Response) => {
-    try {
+export const register: RequestHandler = CatchAsync(
+    async (req: Request, res: Response) => {
         const { firstName, lastName, email, phoneNumber, password, role } =
             req.body;
 
@@ -132,8 +130,6 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
             password,
             role,
             isOnboarded: false,
-            onboardingStage: "email_pending",
-            verificationStatus: "not_submitted",
         });
 
         await createAndSendOtp(user._id.toString(), user.email);
@@ -144,18 +140,13 @@ export const register: RequestHandler = async (req: Request, res: Response) => {
             isOnboarded: false,
             userId: user._id,
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 // ─── Verify OTP ───────────────────────────────────────────────────────────────
 
-export const verifyOtp: RequestHandler = async (
-    req: Request,
-    res: Response,
-) => {
-    try {
+export const verifyOtp: RequestHandler = CatchAsync(
+    async (req: Request, res: Response) => {
         const { userId, code } = req.body;
 
         if (!userId || !code) {
@@ -203,34 +194,24 @@ export const verifyOtp: RequestHandler = async (
             return;
         }
 
-        const syncedUser = await syncUserOnboardingState(user._id.toString());
-        if (!syncedUser) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-
         await Otp.deleteMany({ userId });
 
         const token = signToken(user._id.toString(), user.role);
+        const userResponse = await buildUserResponse(user);
 
         res.status(200).json({
             message: "Email verified successfully",
             isOnboarded: true,
             token,
-            user: await buildUserResponse(syncedUser),
+            user: userResponse,
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 // ─── Resend OTP ───────────────────────────────────────────────────────────────
 
-export const resendOtp: RequestHandler = async (
-    req: Request,
-    res: Response,
-) => {
-    try {
+export const resendOtp: RequestHandler = CatchAsync(
+    async (req: Request, res: Response) => {
         const { email } = req.body;
 
         if (!email) {
@@ -248,15 +229,13 @@ export const resendOtp: RequestHandler = async (
             message:
                 "If your email is registered and pending verification, a new OTP has been sent.",
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-export const login: RequestHandler = async (req: Request, res: Response) => {
-    try {
+export const login: RequestHandler = CatchAsync(
+    async (req: Request, res: Response) => {
         const { email, password } = req.body;
         if (!email || !password) {
             res.status(400).json({ message: "Email and password are required" });
@@ -283,12 +262,10 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
                 isOnboarded: false,
                 userId: user._id,
                 accessState: {
-                    onboardingStage: "email_pending",
-                    verificationStatus: "not_submitted",
                     onboardingRequired: true,
                     canAccessHome: false,
                     accessStatus: "email_verification_required",
-                    nextStep: "email_otp",
+                    isOnboarded: false,
                 },
             });
             return;
@@ -302,21 +279,15 @@ export const login: RequestHandler = async (req: Request, res: Response) => {
             isOnboarded: true,
             token,
             canAccessHome: userResponse.accessState.canAccessHome,
-            nextStep: userResponse.accessState.nextStep,
             user: userResponse,
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 // ─── Admin Login ──────────────────────────────────────────────────────────────
 
-export const adminLogin: RequestHandler = async (
-    req: Request,
-    res: Response,
-) => {
-    try {
+export const adminLogin: RequestHandler = CatchAsync(
+    async (req: Request, res: Response) => {
         const { email, password } = req.body;
         if (!email || !password) {
             res.status(400).json({ message: "Email and password are required" });
@@ -347,13 +318,10 @@ export const adminLogin: RequestHandler = async (
                 isOnboarded: false,
                 userId: user._id,
                 accessState: {
-                    onboardingStage: "email_pending",
-                    verificationStatus: "not_submitted",
                     onboardingRequired: true,
                     canAccessHome: false,
                     accessStatus: "email_verification_required",
-                    nextStep: "email_otp",
-                    currentStep: "email_otp",
+                    isOnboarded: false,
                 },
             });
             return;
@@ -367,18 +335,13 @@ export const adminLogin: RequestHandler = async (
             token,
             user: userResponse,
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
 
-export const logout: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const logout: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const jti = req.user?.jti;
         const exp = req.user?.exp;
 
@@ -387,18 +350,13 @@ export const logout: RequestHandler = async (
         }
 
         res.status(200).json({ message: "Logged out successfully" });
-    } catch (error: any) {
-        res.status(200).json({ message: "Logged out successfully" });
     }
-};
+);
 
 // ─── Get current user ─────────────────────────────────────────────────────────
 
-export const getMe: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const getMe: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const user = await User.findById(req.user?.userId);
 
         if (!user) {
@@ -407,10 +365,8 @@ export const getMe: RequestHandler = async (
         }
 
         res.status(200).json({ user: await buildUserResponse(user) });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 // ─── Upload profile image ─────────────────────────────────────────────────────
 
@@ -440,15 +396,12 @@ export const uploadProfileImage: RequestHandler = CatchAsync(
             return;
         }
 
-        const syncedUser = await syncUserOnboardingState(user._id.toString());
-        const accessState = syncedUser
-            ? await getUserAccessState(syncedUser)
-            : undefined;
+        const accessState = await getUserAccessState(user);
 
         res.status(200).json({
             success: true,
             message: "Profile image uploaded successfully",
             data: { profileImageUrl: imageKey, accessState },
         });
-    },
+    }
 );

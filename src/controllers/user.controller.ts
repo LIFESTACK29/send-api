@@ -2,11 +2,12 @@ import { Response, RequestHandler } from "express";
 import User from "../models/user.model";
 import { AuthRequest } from "../types/user.type";
 import { getUserAccessState } from "../services/onboarding.service";
+import { CatchAsync } from "../utils/catchasync.util";
 
 const buildUserResponse = async (user: any) => {
     const accessState = await getUserAccessState(user);
 
-    return {
+    const response: any = {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -14,13 +15,19 @@ const buildUserResponse = async (user: any) => {
         phoneNumber: user.phoneNumber,
         role: user.role,
         isOnboarded: user.isOnboarded,
-        riderStatus: user.riderStatus,
-        onboardingStage: user.onboardingStage,
-        verificationStatus: user.verificationStatus,
-        profileImageUrl: user.profileImageUrl,
-        verificationNotes: user.verificationNotes,
         accessState,
     };
+
+    // Include rider details if user is a rider
+    if (user.role === "rider" && user.riderDetails) {
+        response.riderDetails = {
+            nin: user.riderDetails.nin,
+            vehicleType: user.riderDetails.vehicleType,
+            submittedAt: user.riderDetails.submittedAt,
+        };
+    }
+
+    return response;
 };
 
 /**
@@ -28,11 +35,8 @@ const buildUserResponse = async (user: any) => {
  * @route   GET /api/v1/user/profile
  * @access  Private
  */
-export const getProfile: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const getProfile: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
 
         if (!userId) {
@@ -50,21 +54,16 @@ export const getProfile: RequestHandler = async (
         res.status(200).json({
             user: await buildUserResponse(user),
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 /**
  * @desc    Update user profile
  * @route   PATCH /api/v1/user/profile
  * @access  Private
  */
-export const updateProfile: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const updateProfile: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
 
         if (!userId) {
@@ -91,21 +90,16 @@ export const updateProfile: RequestHandler = async (
             message: "Profile updated successfully",
             user: await buildUserResponse(user),
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 /**
  * @desc    Add an address
  * @route   POST /api/v1/user/addresses
  * @access  Private
  */
-export const addAddress: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const addAddress: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
 
         if (!userId) {
@@ -135,21 +129,16 @@ export const addAddress: RequestHandler = async (
             message: "Address added successfully",
             user: await buildUserResponse(user),
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 /**
  * @desc    Edit an address
  * @route   PUT /api/v1/user/addresses/:addressId
  * @access  Private
  */
-export const editAddress: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const editAddress: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
         const { addressId } = req.params;
 
@@ -195,21 +184,16 @@ export const editAddress: RequestHandler = async (
             message: "Address updated successfully",
             user: await buildUserResponse(user),
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 /**
  * @desc    Delete an address
  * @route   DELETE /api/v1/user/addresses/:addressId
  * @access  Private
  */
-export const deleteAddress: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const deleteAddress: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
         const { addressId } = req.params;
 
@@ -235,21 +219,16 @@ export const deleteAddress: RequestHandler = async (
             message: "Address deleted successfully",
             user: await buildUserResponse(user),
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);
 
 /**
  * @desc    Update user's push token
  * @route   PATCH /api/v1/user/push-token
  * @access  Private
  */
-export const updatePushToken: RequestHandler = async (
-    req: AuthRequest,
-    res: Response,
-) => {
-    try {
+export const updatePushToken: RequestHandler = CatchAsync(
+    async (req: AuthRequest, res: Response) => {
         const userId = req.user?.userId;
         const { pushToken } = req.body;
 
@@ -277,7 +256,5 @@ export const updatePushToken: RequestHandler = async (
         res.status(200).json({
             message: "Push token updated successfully",
         });
-    } catch (error: any) {
-        res.status(500).json({ message: "Internal server error" });
     }
-};
+);

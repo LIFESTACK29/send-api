@@ -7,6 +7,13 @@ export interface IAddress {
     landmark?: string;
 }
 
+export interface IRiderDetails {
+    nin: string;
+    vehicleType: string;
+    profileImage: string;
+    submittedAt?: Date;
+}
+
 export interface IKekeRiderProfile {
     campusId: mongoose.Types.ObjectId;
     onboardedBy?: mongoose.Types.ObjectId;
@@ -38,31 +45,7 @@ export interface IUser extends Document {
     createdAt: Date;
     isOnboarded: boolean;
     updatedAt: Date;
-    // Delivery rider-specific fields
-    riderStatus?:
-        | "inactive"
-        | "incomplete"
-        | "pending_verification"
-        | "active"
-        | "rejected";
-    onboardingStage?:
-        | "email_pending"
-        | "profile_pending"
-        | "personal_details_pending"
-        | "vehicle_pending"
-        | "documents_pending"
-        | "review_pending"
-        | "pending_admin_approval"
-        | "approved"
-        | "rejected";
-    verificationStatus?: "not_submitted" | "pending" | "approved" | "rejected";
-    profileImageUrl?: string;
-    verificationNotes?: string;
-    walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
-    dateOfBirth?: Date;
-    ninNumber?: string;
-    stateOfResidence?: string;
-    operationalArea?: string;
+    riderDetails?: IRiderDetails;
     kekeRiderProfile?: IKekeRiderProfile;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
@@ -71,6 +54,13 @@ const AddressSchema = new Schema<IAddress>({
     name: { type: String, required: true },
     location: { type: String, required: true },
     landmark: { type: String },
+});
+
+const RiderDetailsSchema = new Schema<IRiderDetails>({
+    nin: { type: String, required: true },
+    vehicleType: { type: String, required: true },
+    profileImage: { type: String, required: true },
+    submittedAt: { type: Date, default: Date.now },
 });
 
 const UserSchema: Schema = new Schema(
@@ -100,49 +90,7 @@ const UserSchema: Schema = new Schema(
         },
         addresses: { type: [AddressSchema], default: [] },
         pushToken: { type: String },
-        // Rider-specific fields
-        riderStatus: {
-            type: String,
-            enum: [
-                "inactive",
-                "incomplete",
-                "pending_verification",
-                "active",
-                "rejected",
-            ],
-            default: "inactive",
-        },
-        onboardingStage: {
-            type: String,
-            enum: [
-                "email_pending",
-                "profile_pending",
-                "personal_details_pending",
-                "vehicle_pending",
-                "documents_pending",
-                "review_pending",
-                "pending_admin_approval",
-                "approved",
-                "rejected",
-            ],
-            default: "email_pending",
-        },
-        verificationStatus: {
-            type: String,
-            enum: ["not_submitted", "pending", "approved", "rejected"],
-            default: "not_submitted",
-        },
-        profileImageUrl: { type: String },
-        verificationNotes: { type: String },
-        dateOfBirth: { type: Date },
-        ninNumber: { type: String },
-        stateOfResidence: { type: String },
-        operationalArea: { type: String },
-        walletProvisioningStatus: {
-            type: String,
-            enum: ["not_started", "creating", "active", "failed"],
-            default: "not_started",
-        },
+        riderDetails: RiderDetailsSchema,
         kekeRiderProfile: {
             campusId: { type: Schema.Types.ObjectId, ref: "Campus" },
             onboardedBy: { type: Schema.Types.ObjectId, ref: "User" },

@@ -8,7 +8,7 @@ import {
     getOnboardingStatus,
     uploadVehicleImage,
 } from "../controllers/vehicle.controller";
-import { updatePersonalDetails, submitForVerification } from "../controllers/rider.controller";
+import { submitRiderKyc } from "../controllers/rider.controller";
 import { upload } from "../middlewares/upload.middleware";
 
 const router = Router();
@@ -16,7 +16,15 @@ const router = Router();
 // Public route to get vehicle types
 router.get("/vehicle-types", authenticate, getVehicleTypes);
 
-// Rider routes
+// KYC Submission
+router.post(
+    "/:userId/kyc-details",
+    authenticate,
+    authorizeSelfOrAdmin(),
+    submitRiderKyc,
+);
+
+// Rider vehicle management
 router.post("/:userId/vehicles", authenticate, authorizeSelfOrAdmin(), createVehicle);
 router.get("/:userId/vehicles", authenticate, authorizeSelfOrAdmin(), getUserVehicles);
 router.get(
@@ -31,22 +39,6 @@ router.post(
     authorizeSelfOrAdmin(),
     upload.single("vehicleImage"),
     uploadVehicleImage,
-);
-
-// Personal details
-router.patch(
-    "/:userId/personal-details",
-    authenticate,
-    authorizeSelfOrAdmin(),
-    updatePersonalDetails,
-);
-
-// Submit for verification
-router.post(
-    "/:userId/submit-verification",
-    authenticate,
-    authorizeSelfOrAdmin(),
-    submitForVerification,
 );
 
 // Onboarding status

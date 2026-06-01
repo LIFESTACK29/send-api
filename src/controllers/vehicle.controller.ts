@@ -3,35 +3,32 @@ import Vehicle from "../models/vehicle.model";
 import User from "../models/user.model";
 import { AuthRequest } from "../types/user.type";
 import { CatchAsync } from "../utils/catchasync.util";
-import {
-    getRiderOnboardingState,
-    syncUserOnboardingState,
-} from "../services/onboarding.service";
+import { getRiderOnboardingState } from "../services/onboarding.service";
 
 const VEHICLE_TYPES = [
     {
         type: "BICYCLE",
         label: "Bicycle",
-        icon: "bicycle",
+        icon: "🚴",
         description: "Two-wheeled pedal vehicle",
     },
     {
         type: "MOTORCYCLE",
         label: "Motorcycle",
-        icon: "motorcycle",
+        icon: "🏍️",
         description: "Two-wheeled motorized vehicle",
     },
     {
         type: "TRICYCLE",
         label: "Tricycle",
-        icon: "tricycle",
+        icon: "🛺",
         description: "Three-wheeled vehicle (Tuk-tuk)",
     },
     {
         type: "CAR",
         label: "Car",
-        icon: "car",
-        description: "Four-wheeled sedan/sedan vehicle",
+        icon: "🚗",
+        description: "Four-wheeled sedan vehicle",
     },
 ];
 
@@ -87,8 +84,6 @@ export const createVehicle: RequestHandler = CatchAsync(
             verificationStatus: "pending",
         });
 
-        await syncUserOnboardingState(userId);
-
         const accessState = await getRiderOnboardingState(userId);
 
         res.status(201).json({
@@ -97,7 +92,6 @@ export const createVehicle: RequestHandler = CatchAsync(
             data: {
                 vehicleId: vehicle._id,
                 vehicleType: vehicle.vehicleType,
-                nextStep: accessState.nextStep,
                 accessState,
             },
         });
@@ -188,7 +182,6 @@ export const uploadVehicleImage: RequestHandler = CatchAsync(
         vehicle.imageUrl = imageUrl;
         await vehicle.save();
 
-        await syncUserOnboardingState(userId);
         const accessState = await getRiderOnboardingState(userId);
 
         res.status(200).json({
@@ -197,7 +190,6 @@ export const uploadVehicleImage: RequestHandler = CatchAsync(
             data: {
                 vehicleId: vehicle._id,
                 imageUrl: vehicle.imageUrl,
-                nextStep: accessState.nextStep,
                 accessState,
             },
         });
@@ -214,8 +206,8 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
         const { userId } = req.params;
 
         // Get user
-        const user = await syncUserOnboardingState(userId);
-        if (!user) {
+        const user = await User.findById(userId);
+        if (!user || user.role !== "rider") {
             res.status(404).json({
                 success: false,
                 message: "User not found",
@@ -224,25 +216,14 @@ export const getOnboardingStatus: RequestHandler = CatchAsync(
         }
 
         const accessState = await getRiderOnboardingState(userId);
-        const vehicles = await Vehicle.find({ userId });
 
         res.status(200).json({
             success: true,
             data: {
                 userId,
-                riderStatus: user.riderStatus,
-                onboardingStage: accessState.onboardingStage,
-                verificationStatus: accessState.verificationStatus,
+                isOnboarded: user.isOnboarded,
+                riderDetails: user.riderDetails || null,
                 accessState,
-                onboardingProgress: accessState.onboardingProgress,
-                completionPercentage: accessState.completionPercentage,
-                vehicleSelection: {
-                    totalVehicles: vehicles.length,
-                    vehicles: vehicles.map((v) => ({
-                        id: v._id,
-                        type: v.vehicleType,
-                    })),
-                },
             },
         });
     },

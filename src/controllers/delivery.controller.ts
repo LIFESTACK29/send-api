@@ -236,7 +236,7 @@ const createMatchRequestResponse = (
 
 const buildRiderPreview = async (riderId: string) => {
     const riderUser = await User.findById(riderId).select(
-        "firstName lastName profileImageUrl riderStatus phoneNumber",
+        "firstName lastName phoneNumber riderDetails isOnboarded",
     );
     if (!riderUser) return null;
 
@@ -249,8 +249,8 @@ const buildRiderPreview = async (riderId: string) => {
         firstName: riderUser.firstName,
         lastName: riderUser.lastName,
         fullName: `${riderUser.firstName} ${riderUser.lastName}`,
-        profileImageUrl: riderUser.profileImageUrl || null,
-        riderStatus: riderUser.riderStatus || "incomplete",
+        profileImage: riderUser.riderDetails?.profileImage || null,
+        isOnboarded: riderUser.isOnboarded,
         phoneNumber: riderUser.phoneNumber || "",
         vehicle: riderVehicle
             ? {
@@ -272,7 +272,7 @@ const findNearbyActiveRiders = async (
     User.find({
         role: "rider",
         isOnline: true,
-        riderStatus: "active",
+        isOnboarded: true,
         currentLocation: {
             $nearSphere: {
                 $geometry: {
@@ -288,7 +288,7 @@ const findAllActiveRiders = async (excludedRiderIds: string[] = []) =>
     User.find({
         role: "rider",
         isOnline: true,
-        riderStatus: "active",
+        isOnboarded: true,
         ...(excludedRiderIds.length > 0
             ? { _id: { $nin: excludedRiderIds } }
             : {}),
@@ -771,7 +771,7 @@ export const getNearbyRiders = async (
         const riders = await User.find({
             role: "rider",
             isOnline: true,
-            riderStatus: "active",
+            isOnboarded: true,
             currentLocation: {
                 $nearSphere: {
                     $geometry: {
@@ -782,7 +782,7 @@ export const getNearbyRiders = async (
                 },
             },
         }).select(
-            "firstName lastName currentLocation riderStatus profileImageUrl lastLocationUpdate",
+            "firstName lastName currentLocation riderDetails lastLocationUpdate",
         );
 
         const riderCards = riders.map((rider: any) => ({
@@ -790,8 +790,8 @@ export const getNearbyRiders = async (
             firstName: rider.firstName,
             lastName: rider.lastName,
             fullName: `${rider.firstName} ${rider.lastName}`,
-            profileImageUrl: rider.profileImageUrl || null,
-            riderStatus: rider.riderStatus || "incomplete",
+            profileImage: rider.riderDetails?.profileImage || null,
+            isOnboarded: rider.isOnboarded,
             isOnline: true,
             location: {
                 lat: rider.currentLocation?.coordinates?.[1],
@@ -829,7 +829,7 @@ export const getRiderHomeSummary = async (
         }
 
         const rider = await User.findById(riderId).select(
-            "currentLocation isOnline riderStatus",
+            "currentLocation isOnline isOnboarded",
         );
         if (!rider) {
             res.status(404).json({ message: "Rider not found" });
@@ -937,7 +937,7 @@ export const getRiderHomeSummary = async (
                 },
                 rider: {
                     isOnline: rider.isOnline,
-                    riderStatus: rider.riderStatus,
+                    isOnboarded: rider.isOnboarded,
                     hasLocation:
                         Number.isFinite(riderLat) && Number.isFinite(riderLng),
                     location:
@@ -1041,11 +1041,11 @@ export const acceptDelivery = async (
         const riderUser = await User.findOne({
             _id: riderId,
             role: "rider",
-            riderStatus: "active",
+            isOnboarded: true,
         }).select("_id");
         if (!riderUser) {
             res.status(403).json({
-                message: "Only active riders can accept deliveries",
+                message: "Only approved riders can accept deliveries",
             });
             return;
         }
@@ -1353,7 +1353,7 @@ export const getMyDeliveries = async (
             .limit(limitNum > 0 ? limitNum : 0)
             .populate(
                 "riderId",
-                "firstName lastName profileImageUrl riderStatus phoneNumber",
+                "firstName lastName riderDetails phoneNumber isOnboarded",
             );
 
         const mobileDeliveries = deliveries.map((delivery: any) => ({
@@ -1383,8 +1383,8 @@ export const getMyDeliveries = async (
                 ? {
                       id: delivery.riderId._id,
                       fullName: `${delivery.riderId.firstName} ${delivery.riderId.lastName}`,
-                      profileImageUrl: delivery.riderId.profileImageUrl || null,
-                      riderStatus: delivery.riderId.riderStatus || "incomplete",
+                      profileImage: delivery.riderId.riderDetails?.profileImage || null,
+                      isOnboarded: delivery.riderId.isOnboarded,
                       phoneNumber: delivery.riderId.phoneNumber || "",
                   }
                 : null,
@@ -1415,7 +1415,7 @@ export const getDeliveryById = async (
 
         const delivery = await Delivery.findOne(query).populate(
             "riderId",
-            "firstName lastName profileImageUrl riderStatus phoneNumber",
+            "firstName lastName riderDetails phoneNumber isOnboarded",
         );
 
         if (!delivery) {
@@ -1463,11 +1463,10 @@ export const getDeliveryById = async (
                     ? {
                           id: (delivery.riderId as any)._id,
                           fullName: `${(delivery.riderId as any).firstName} ${(delivery.riderId as any).lastName}`,
-                          profileImageUrl:
-                              (delivery.riderId as any).profileImageUrl || null,
-                          riderStatus:
-                              (delivery.riderId as any).riderStatus ||
-                              "incomplete",
+                          profileImage:
+                              (delivery.riderId as any).riderDetails?.profileImage || null,
+                          isOnboarded:
+                              (delivery.riderId as any).isOnboarded,
                           phoneNumber:
                               (delivery.riderId as any).phoneNumber || "",
                       }
