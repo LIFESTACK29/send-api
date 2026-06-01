@@ -14,11 +14,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserId = exports.requireActiveRiderAccess = exports.authorizeSelfOrAdmin = exports.authorize = exports.authenticate = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const user_model_1 = __importDefault(require("../models/user.model"));
+const token_denylist_util_1 = require("../utils/token-denylist.util");
 const onboarding_service_1 = require("../services/onboarding.service");
-/**
- * Authenticate middleware — verifies JWT from Authorization header
- * and attaches user payload to req.user
- */
 const authenticate = (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -28,22 +26,24 @@ const authenticate = (req, res, next) => {
         }
         const token = authHeader.split(" ")[1];
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+        // Reject tokens that have been explicitly revoked via logout
+        if (decoded.jti && (0, token_denylist_util_1.isTokenDenied)(decoded.jti)) {
+            res.status(401).json({ message: "Unauthorized — session has been revoked" });
+            return;
+        }
         req.user = {
             userId: decoded.userId,
             role: decoded.role,
+            jti: decoded.jti,
+            exp: decoded.exp,
         };
         next();
     }
     catch (error) {
         res.status(401).json({ message: "Unauthorized — invalid token" });
-        return;
     }
 };
 exports.authenticate = authenticate;
-/**
- * Authorize middleware — restricts access to specific roles.
- * Must be used AFTER authenticate.
- */
 const authorize = (...roles) => {
     return (req, res, next) => {
         if (!req.user) {
@@ -58,10 +58,6 @@ const authorize = (...roles) => {
     };
 };
 exports.authorize = authorize;
-/**
- * Authorize middleware — ensures a user can only access their own :userId routes
- * unless they are an admin.
- */
 const authorizeSelfOrAdmin = (paramName = "userId") => {
     return (req, res, next) => {
         if (!req.user) {
@@ -85,10 +81,6 @@ const authorizeSelfOrAdmin = (paramName = "userId") => {
     };
 };
 exports.authorizeSelfOrAdmin = authorizeSelfOrAdmin;
-/**
- * Blocks rider-only "home" APIs until rider onboarding is complete.
- * Customers/admin users are unaffected.
- */
 const requireActiveRiderAccess = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         if (!req.user) {
@@ -99,7 +91,7 @@ const requireActiveRiderAccess = (req, res, next) => __awaiter(void 0, void 0, v
             next();
             return;
         }
-        const user = yield (0, onboarding_service_1.syncUserOnboardingState)(req.user.userId);
+        const user = yield user_model_1.default.findById(req.user.userId);
         if (!user) {
             res.status(404).json({ message: "User not found" });
             return;
@@ -108,14 +100,12 @@ const requireActiveRiderAccess = (req, res, next) => __awaiter(void 0, void 0, v
         if (!accessState.canAccessHome) {
             res.status(403).json({
                 code: "RIDER_HOME_LOCKED",
-                message: accessState.nextStep === "email_otp"
+                message: accessState.accessStatus === "email_verification_required"
                     ? "Email verification required"
                     : "Complete rider onboarding to continue",
                 canAccessHome: accessState.canAccessHome,
-                riderStatus: accessState.riderStatus,
-                onboardingStage: accessState.onboardingStage,
-                verificationStatus: accessState.verificationStatus,
-                nextStep: accessState.nextStep,
+                isOnboarded: user.isOnboarded,
+                accessStatus: accessState.accessStatus,
             });
             return;
         }
@@ -126,9 +116,6 @@ const requireActiveRiderAccess = (req, res, next) => __awaiter(void 0, void 0, v
     }
 });
 exports.requireActiveRiderAccess = requireActiveRiderAccess;
-/**
- * Helper to get the authenticated user's MongoDB _id from the request.
- */
 const getUserId = (req) => {
     var _a;
     return ((_a = req.user) === null || _a === void 0 ? void 0 : _a.userId) || null;

@@ -12,368 +12,143 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRiderVerificationDetail = exports.getAllRidersForAdmin = exports.verifyRider = exports.verifyDocument = exports.deleteDocument = exports.getDocument = exports.getUserDocuments = exports.uploadDocument = exports.getRequiredDocuments = void 0;
-const document_model_1 = __importDefault(require("../models/document.model"));
+exports.verifyRider = exports.getRiderVerificationDetail = exports.getAllRidersForAdmin = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
-const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
-const upload_middleware_1 = require("../middlewares/upload.middleware");
 const catchasync_util_1 = require("../utils/catchasync.util");
 const onboarding_service_1 = require("../services/onboarding.service");
-const REQUIRED_DOCUMENTS = [
-    {
-        type: "DRIVING_LICENSE",
-        label: "Driving License",
-        description: "Valid government-issued driving license",
-        required: true,
-    },
-    {
-        type: "GOVERNMENT_ID",
-        label: "Government ID",
-        description: "Passport, National ID, or State ID",
-        required: true,
-    },
-    {
-        type: "INSURANCE",
-        label: "Insurance Certificate",
-        description: "Vehicle insurance document",
-        required: true,
-    },
-    {
-        type: "REGISTRATION",
-        label: "Vehicle Registration",
-        description: "Vehicle registration certificate",
-        required: true,
-    },
-];
 /**
- * @desc    Get required documents list
- * @route   GET /api/v1/riders/documents/required
- * @access  Private
- */
-exports.getRequiredDocuments = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.status(200).json({
-        success: true,
-        data: REQUIRED_DOCUMENTS,
-    });
-}));
-/**
- * @desc    Upload document
- * @route   POST /api/v1/riders/:userId/documents
- * @access  Private
- */
-exports.uploadDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { userId } = req.params;
-    const { documentType, documentNumber, expiryDate } = req.body;
-    if (!documentType || !documentNumber) {
-        res.status(400).json({
-            success: false,
-            message: "Document type and number are required",
-        });
-        return;
-    }
-    if (![
-        "DRIVING_LICENSE",
-        "GOVERNMENT_ID",
-        "INSURANCE",
-        "REGISTRATION",
-    ].includes(documentType)) {
-        res.status(400).json({
-            success: false,
-            message: "Invalid document type",
-        });
-        return;
-    }
-    if (!req.file) {
-        res.status(400).json({
-            success: false,
-            message: "No document file provided",
-        });
-        return;
-    }
-    // Verify user exists and is a rider
-    const user = yield user_model_1.default.findById(userId);
-    if (!user || user.role !== "rider") {
-        res.status(404).json({
-            success: false,
-            message: "Rider not found",
-        });
-        return;
-    }
-    // Check if document already exists
-    const existingDoc = yield document_model_1.default.findOne({
-        userId,
-        documentType,
-    });
-    if (existingDoc) {
-        // Update existing document
-        const documentUrl = yield (0, upload_middleware_1.uploadToStorage)(req.file, `documents/${userId}/${documentType}`);
-        existingDoc.documentUrl = documentUrl;
-        existingDoc.documentNumber = documentNumber;
-        if (expiryDate) {
-            existingDoc.expiryDate = new Date(expiryDate);
-        }
-        existingDoc.verificationStatus = "pending";
-        yield existingDoc.save();
-        yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
-        res.status(200).json({
-            success: true,
-            message: "Document updated successfully",
-            data: {
-                documentId: existingDoc._id,
-                documentType: existingDoc.documentType,
-                verificationStatus: existingDoc.verificationStatus,
-            },
-        });
-        return;
-    }
-    // Upload new document
-    const documentUrl = yield (0, upload_middleware_1.uploadToStorage)(req.file, `documents/${userId}/${documentType}`);
-    const newDocument = yield document_model_1.default.create({
-        userId,
-        documentType,
-        documentUrl,
-        documentNumber,
-        expiryDate: expiryDate ? new Date(expiryDate) : undefined,
-        verificationStatus: "pending",
-    });
-    yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
-    res.status(201).json({
-        success: true,
-        message: "Document uploaded successfully",
-        data: {
-            documentId: newDocument._id,
-            documentType: newDocument.documentType,
-            verificationStatus: newDocument.verificationStatus,
-        },
-    });
-}));
-/**
- * @desc    Get user's documents
- * @route   GET /api/v1/riders/:userId/documents
- * @access  Private
- */
-exports.getUserDocuments = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { userId } = req.params;
-    const documents = yield document_model_1.default.find({ userId }).select("documentType documentNumber expiryDate verificationStatus uploadedAt rejectionReason");
-    res.status(200).json({
-        success: true,
-        data: {
-            totalDocuments: documents.length,
-            documents,
-            missingDocuments: REQUIRED_DOCUMENTS.filter((req) => !documents.some((doc) => doc.documentType === req.type)).map((d) => d.type),
-        },
-    });
-}));
-/**
- * @desc    Get single document
- * @route   GET /api/v1/riders/:userId/documents/:documentId
- * @access  Private
- */
-exports.getDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { userId, documentId } = req.params;
-    const document = yield document_model_1.default.findOne({
-        _id: documentId,
-        userId,
-    });
-    if (!document) {
-        res.status(404).json({
-            success: false,
-            message: "Document not found",
-        });
-        return;
-    }
-    yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
-    res.status(200).json({
-        success: true,
-        data: document,
-    });
-}));
-/**
- * @desc    Delete document
- * @route   DELETE /api/v1/riders/:userId/documents/:documentId
- * @access  Private
- */
-exports.deleteDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { userId, documentId } = req.params;
-    const document = yield document_model_1.default.findOneAndDelete({
-        _id: documentId,
-        userId,
-    });
-    if (!document) {
-        res.status(404).json({
-            success: false,
-            message: "Document not found",
-        });
-        return;
-    }
-    res.status(200).json({
-        success: true,
-        message: "Document deleted successfully",
-    });
-}));
-/**
- * @desc    Admin: Verify/Approve document
- * @route   PUT /api/v1/admin/documents/:documentId/verify
- * @access  Private (Admin Only)
- */
-exports.verifyDocument = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { documentId } = req.params;
-    const { status, rejectionReason } = req.body;
-    if (!["approved", "rejected"].includes(status)) {
-        res.status(400).json({
-            success: false,
-            message: "Invalid verification status",
-        });
-        return;
-    }
-    const document = yield document_model_1.default.findByIdAndUpdate(documentId, {
-        verificationStatus: status,
-        rejectionReason: status === "rejected" ? rejectionReason : undefined,
-    }, { new: true });
-    if (!document) {
-        res.status(404).json({
-            success: false,
-            message: "Document not found",
-        });
-        return;
-    }
-    res.status(200).json({
-        success: true,
-        message: `Document ${status} successfully`,
-        data: document,
-    });
-}));
-/**
- * @desc    Admin: Verify/Approve rider
- * @route   PUT /api/v1/admin/riders/:userId/verify
- * @access  Private (Admin Only)
- */
-exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { userId } = req.params;
-    const { status, notes } = req.body;
-    if (!["active", "inactive", "rejected"].includes(status)) {
-        res.status(400).json({
-            success: false,
-            message: "Invalid verification status",
-        });
-        return;
-    }
-    const user = yield user_model_1.default.findByIdAndUpdate(userId, {
-        riderStatus: status,
-        verificationStatus: status === "active"
-            ? "approved"
-            : status === "rejected"
-                ? "rejected"
-                : "not_submitted",
-        onboardingStage: status === "rejected" ? "rejected" : "approved",
-        verificationNotes: notes,
-    }, { new: true });
-    if (!user) {
-        res.status(404).json({
-            success: false,
-            message: "User not found",
-        });
-        return;
-    }
-    res.status(200).json({
-        success: true,
-        message: `Rider ${status} successfully`,
-        data: {
-            userId: user._id,
-            riderStatus: user.riderStatus,
-            onboardingStage: user.onboardingStage,
-            verificationStatus: user.verificationStatus,
-            verificationNotes: user.verificationNotes,
-        },
-    });
-}));
-/**
- * @desc    Admin: Get all riders with verification and document summary
+ * @desc    Get all riders pending KYC verification for admin
  * @route   GET /api/v1/admin/riders
- * @access  Private (Admin Only)
+ * @access  Private (Admin only)
  */
 exports.getAllRidersForAdmin = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const riders = yield user_model_1.default.find({ role: "rider" })
-        .select("firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt")
-        .sort({ updatedAt: -1 });
-    const riderIds = riders.map((rider) => rider._id);
-    const vehicles = yield vehicle_model_1.default.find({ userId: { $in: riderIds } }).select("userId imageUrl");
-    const vehiclesByUser = new Map();
-    vehicles.forEach((vehicle) => {
-        var _a;
-        const key = vehicle.userId.toString();
-        if (!vehiclesByUser.has(key))
-            vehiclesByUser.set(key, []);
-        (_a = vehiclesByUser.get(key)) === null || _a === void 0 ? void 0 : _a.push(vehicle);
-    });
-    const formatted = yield Promise.all(riders.map((rider) => __awaiter(void 0, void 0, void 0, function* () {
-        const userId = rider._id.toString();
-        const riderVehicles = vehiclesByUser.get(userId) || [];
-        const accessState = yield (0, onboarding_service_1.getUserAccessState)(rider);
-        return {
+    const { status } = req.query;
+    const query = {
+        role: "rider",
+        riderDetails: { $exists: true },
+    };
+    if (status === "pending") {
+        query.isOnboarded = false;
+    }
+    else if (status === "approved") {
+        query.isOnboarded = true;
+    }
+    const riders = yield user_model_1.default.find(query)
+        .select("firstName lastName email phoneNumber isOnboarded riderDetails createdAt updatedAt")
+        .limit(100)
+        .sort({ createdAt: -1 });
+    const ridersWithDetails = riders.map((rider) => {
+        var _a, _b, _c;
+        return ({
             id: rider._id,
             firstName: rider.firstName,
             lastName: rider.lastName,
             email: rider.email,
             phoneNumber: rider.phoneNumber,
-            riderStatus: rider.riderStatus,
-            onboardingStage: rider.onboardingStage,
-            verificationStatus: rider.verificationStatus,
-            verificationNotes: rider.verificationNotes,
-            hasProfileImage: Boolean(rider.profileImageUrl),
-            hasVehicle: riderVehicles.length > 0,
-            hasVehicleImage: riderVehicles.some((v) => Boolean(v.imageUrl)),
-            accessState,
+            isOnboarded: rider.isOnboarded,
+            riderDetails: {
+                nin: (_a = rider.riderDetails) === null || _a === void 0 ? void 0 : _a.nin,
+                vehicleType: (_b = rider.riderDetails) === null || _b === void 0 ? void 0 : _b.vehicleType,
+                submittedAt: (_c = rider.riderDetails) === null || _c === void 0 ? void 0 : _c.submittedAt,
+            },
             createdAt: rider.createdAt,
             updatedAt: rider.updatedAt,
-        };
-    })));
+        });
+    });
     res.status(200).json({
         success: true,
-        data: {
-            totalRiders: formatted.length,
-            riders: formatted,
-        },
+        data: ridersWithDetails,
     });
 }));
 /**
- * @desc    Admin: Get single rider verification details
+ * @desc    Get rider KYC details for admin review
  * @route   GET /api/v1/admin/riders/:userId
- * @access  Private (Admin Only)
+ * @access  Private (Admin only)
  */
 exports.getRiderVerificationDetail = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { userId } = req.params;
-    const rider = yield user_model_1.default.findOne({ _id: userId, role: "rider" }).select("firstName lastName email phoneNumber riderStatus onboardingStage verificationStatus verificationNotes profileImageUrl createdAt updatedAt");
-    if (!rider) {
+    const rider = yield user_model_1.default.findById(userId);
+    if (!rider || rider.role !== "rider") {
         res.status(404).json({
             success: false,
             message: "Rider not found",
         });
         return;
     }
-    const [vehicles, accessState] = yield Promise.all([
-        vehicle_model_1.default.find({ userId }).select("vehicleType brand model year color licensePlate registrationNumber imageUrl verificationStatus createdAt updatedAt"),
-        (0, onboarding_service_1.getUserAccessState)(rider),
-    ]);
+    if (!rider.riderDetails) {
+        res.status(400).json({
+            success: false,
+            message: "Rider has not submitted KYC details yet",
+        });
+        return;
+    }
     res.status(200).json({
         success: true,
         data: {
-            rider: {
-                id: rider._id,
-                firstName: rider.firstName,
-                lastName: rider.lastName,
-                email: rider.email,
-                phoneNumber: rider.phoneNumber,
-                riderStatus: rider.riderStatus,
-                onboardingStage: rider.onboardingStage,
-                verificationStatus: rider.verificationStatus,
-                verificationNotes: rider.verificationNotes,
-                profileImageUrl: rider.profileImageUrl,
-                accessState,
-                createdAt: rider.createdAt,
-                updatedAt: rider.updatedAt,
+            id: rider._id,
+            firstName: rider.firstName,
+            lastName: rider.lastName,
+            email: rider.email,
+            phoneNumber: rider.phoneNumber,
+            isOnboarded: rider.isOnboarded,
+            riderDetails: {
+                nin: rider.riderDetails.nin,
+                vehicleType: rider.riderDetails.vehicleType,
+                profileImage: rider.riderDetails.profileImage,
+                submittedAt: rider.riderDetails.submittedAt,
             },
-            vehicles,
+            createdAt: rider.createdAt,
+            updatedAt: rider.updatedAt,
+        },
+    });
+}));
+/**
+ * @desc    Admin approve/reject rider KYC
+ * @route   PUT /api/v1/admin/riders/:userId/verify
+ * @access  Private (Admin only)
+ */
+exports.verifyRider = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { userId } = req.params;
+    const { approved, notes } = req.body;
+    if (typeof approved !== "boolean") {
+        res.status(400).json({
+            success: false,
+            message: "Approved status is required",
+        });
+        return;
+    }
+    const rider = yield user_model_1.default.findById(userId);
+    if (!rider || rider.role !== "rider") {
+        res.status(404).json({
+            success: false,
+            message: "Rider not found",
+        });
+        return;
+    }
+    if (!rider.riderDetails) {
+        res.status(400).json({
+            success: false,
+            message: "Rider has not submitted KYC details yet",
+        });
+        return;
+    }
+    if (approved) {
+        rider.isOnboarded = true;
+    }
+    else {
+        rider.isOnboarded = false;
+    }
+    yield rider.save();
+    const accessState = yield (0, onboarding_service_1.getUserAccessState)(rider);
+    res.status(200).json({
+        success: true,
+        message: approved
+            ? "Rider approved successfully"
+            : "Rider rejected",
+        data: {
+            userId: rider._id,
+            isOnboarded: rider.isOnboarded,
+            accessState,
         },
     });
 }));

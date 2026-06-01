@@ -203,8 +203,8 @@ export const initSocket = (server: HttpServer) => {
                                 "initial_riders",
                                 nearby.map((r) => ({
                                     riderId: r._id,
-                                    profileImageUrl: r.profileImageUrl || null,
-                                    riderStatus: r.riderStatus || "incomplete",
+                                    profileImage: r.riderDetails?.profileImage || null,
+                                    isOnboarded: r.isOnboarded,
                                     coords: r.currentLocation?.coordinates
                                         ? {
                                               lat: r.currentLocation.coordinates[1],

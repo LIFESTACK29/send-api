@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getDeliveryById = exports.getMyDeliveries = exports.cancelDelivery = exports.assignRiderToDeliveryByAdmin = exports.acceptDelivery = exports.declineMatchRequest = exports.getRiderHomeSummary = exports.getNearbyRiders = exports.createDeliveryManually = exports.waitMoreForRider = exports.requestDelivery = exports.calculateDeliveryFee = void 0;
+exports.completeDelivery = exports.getDeliveryById = exports.getMyDeliveries = exports.cancelDelivery = exports.assignRiderToDeliveryByAdmin = exports.acceptDelivery = exports.declineMatchRequest = exports.getRiderHomeSummary = exports.getNearbyRiders = exports.createDeliveryManually = exports.waitMoreForRider = exports.requestDelivery = exports.calculateDeliveryFee = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const delivery_model_1 = __importDefault(require("../models/delivery.model"));
 const delivery_match_request_model_1 = __importDefault(require("../models/delivery-match-request.model"));
@@ -24,6 +24,7 @@ const socket_service_1 = require("../services/socket.service");
 const delivery_queue_1 = require("../queues/delivery.queue");
 const auth_middleware_1 = require("../middlewares/auth.middleware");
 const upload_middleware_1 = require("../middlewares/upload.middleware");
+const wallet_controller_1 = require("./wallet.controller");
 const BASE_FEE_NAIRA = 1000;
 const PER_KM_FEE_NAIRA = 200;
 const MATCH_RADIUS_METERS = 5000;
@@ -159,34 +160,44 @@ const createMobileDeliveryResponse = (delivery, nearbyRidersCount, viewer = "cus
     },
     createdAt: delivery.createdAt,
 });
-const createMatchRequestResponse = (matchRequest, nearbyRidersCount, viewer = "customer") => ({
-    id: matchRequest._id,
-    status: matchRequest.status,
-    pricing: buildPricingForViewer(matchRequest.distance || 0, viewer, matchRequest.fee),
-    route: {
-        distanceKm: Number((matchRequest.distance || 0).toFixed(2)),
-        pickup: matchRequest.pickupLocation,
-        dropoff: matchRequest.dropoffLocation,
-    },
-    contact: {
-        customer: matchRequest.customer,
-        receiver: matchRequest.receiver,
-    },
-    package: {
-        type: matchRequest.packageType,
-        note: matchRequest.deliveryNote || "",
-        imageUrl: matchRequest.itemImage || null,
-    },
-    matching: {
-        strategy: nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
-        nearbyRidersCount,
-        radiusMeters: matchRequest.searchRadiusMeters || MATCH_RADIUS_METERS,
-        timeoutSeconds: matchRequest.timeoutSeconds || MATCH_TIMEOUT_SECONDS,
-    },
-    createdAt: matchRequest.createdAt,
-});
+const createMatchRequestResponse = (matchRequest, nearbyRidersCount, viewer = "customer") => {
+    var _a, _b;
+    return ({
+        id: matchRequest._id,
+        status: matchRequest.status,
+        pricing: buildPricingForViewer(matchRequest.distance || 0, viewer, matchRequest.fee),
+        route: {
+            distanceKm: Number((matchRequest.distance || 0).toFixed(2)),
+            pickup: matchRequest.pickupLocation,
+            dropoff: matchRequest.dropoffLocation,
+        },
+        // Before acceptance riders only see names — phone/email withheld until delivery is created
+        contact: viewer === "rider"
+            ? {
+                customer: { fullName: (_a = matchRequest.customer) === null || _a === void 0 ? void 0 : _a.fullName },
+                receiver: { fullName: (_b = matchRequest.receiver) === null || _b === void 0 ? void 0 : _b.fullName },
+            }
+            : {
+                customer: matchRequest.customer,
+                receiver: matchRequest.receiver,
+            },
+        package: {
+            type: matchRequest.packageType,
+            note: matchRequest.deliveryNote || "",
+            imageUrl: matchRequest.itemImage || null,
+        },
+        matching: {
+            strategy: nearbyRidersCount > 0 ? "nearby_first" : "broadcast_all_online",
+            nearbyRidersCount,
+            radiusMeters: matchRequest.searchRadiusMeters || MATCH_RADIUS_METERS,
+            timeoutSeconds: matchRequest.timeoutSeconds || MATCH_TIMEOUT_SECONDS,
+        },
+        createdAt: matchRequest.createdAt,
+    });
+};
 const buildRiderPreview = (riderId) => __awaiter(void 0, void 0, void 0, function* () {
-    const riderUser = yield user_model_1.default.findById(riderId).select("firstName lastName profileImageUrl riderStatus phoneNumber");
+    var _a;
+    const riderUser = yield user_model_1.default.findById(riderId).select("firstName lastName phoneNumber riderDetails isOnboarded");
     if (!riderUser)
         return null;
     const riderVehicle = yield vehicle_model_1.default.findOne({ userId: riderId })
@@ -197,8 +208,8 @@ const buildRiderPreview = (riderId) => __awaiter(void 0, void 0, void 0, functio
         firstName: riderUser.firstName,
         lastName: riderUser.lastName,
         fullName: `${riderUser.firstName} ${riderUser.lastName}`,
-        profileImageUrl: riderUser.profileImageUrl || null,
-        riderStatus: riderUser.riderStatus || "incomplete",
+        profileImage: ((_a = riderUser.riderDetails) === null || _a === void 0 ? void 0 : _a.profileImage) || null,
+        isOnboarded: riderUser.isOnboarded,
         phoneNumber: riderUser.phoneNumber || "",
         vehicle: riderVehicle
             ? {
@@ -215,7 +226,7 @@ const findNearbyActiveRiders = (lat_1, lng_1, ...args_1) => __awaiter(void 0, [l
     return user_model_1.default.find({
         role: "rider",
         isOnline: true,
-        riderStatus: "active",
+        isOnboarded: true,
         currentLocation: {
             $nearSphere: {
                 $geometry: {
@@ -228,7 +239,7 @@ const findNearbyActiveRiders = (lat_1, lng_1, ...args_1) => __awaiter(void 0, [l
     }).select("_id");
 });
 const findAllActiveRiders = (...args_1) => __awaiter(void 0, [...args_1], void 0, function* (excludedRiderIds = []) {
-    return user_model_1.default.find(Object.assign({ role: "rider", isOnline: true, riderStatus: "active" }, (excludedRiderIds.length > 0
+    return user_model_1.default.find(Object.assign({ role: "rider", isOnline: true, isOnboarded: true }, (excludedRiderIds.length > 0
         ? { _id: { $nin: excludedRiderIds } }
         : {}))).select("_id");
 });
@@ -566,7 +577,7 @@ const getNearbyRiders = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         const riders = yield user_model_1.default.find({
             role: "rider",
             isOnline: true,
-            riderStatus: "active",
+            isOnboarded: true,
             currentLocation: {
                 $nearSphere: {
                     $geometry: {
@@ -576,20 +587,20 @@ const getNearbyRiders = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                     $maxDistance: Number(radius),
                 },
             },
-        }).select("firstName lastName currentLocation riderStatus profileImageUrl lastLocationUpdate");
+        }).select("firstName lastName currentLocation riderDetails lastLocationUpdate");
         const riderCards = riders.map((rider) => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e;
             return ({
                 id: rider._id,
                 firstName: rider.firstName,
                 lastName: rider.lastName,
                 fullName: `${rider.firstName} ${rider.lastName}`,
-                profileImageUrl: rider.profileImageUrl || null,
-                riderStatus: rider.riderStatus || "incomplete",
+                profileImage: ((_a = rider.riderDetails) === null || _a === void 0 ? void 0 : _a.profileImage) || null,
+                isOnboarded: rider.isOnboarded,
                 isOnline: true,
                 location: {
-                    lat: (_b = (_a = rider.currentLocation) === null || _a === void 0 ? void 0 : _a.coordinates) === null || _b === void 0 ? void 0 : _b[1],
-                    lng: (_d = (_c = rider.currentLocation) === null || _c === void 0 ? void 0 : _c.coordinates) === null || _d === void 0 ? void 0 : _d[0],
+                    lat: (_c = (_b = rider.currentLocation) === null || _b === void 0 ? void 0 : _b.coordinates) === null || _c === void 0 ? void 0 : _c[1],
+                    lng: (_e = (_d = rider.currentLocation) === null || _d === void 0 ? void 0 : _d.coordinates) === null || _e === void 0 ? void 0 : _e[0],
                 },
                 lastLocationUpdate: rider.lastLocationUpdate || null,
             });
@@ -619,7 +630,7 @@ const getRiderHomeSummary = (req, res, next) => __awaiter(void 0, void 0, void 0
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        const rider = yield user_model_1.default.findById(riderId).select("currentLocation isOnline riderStatus");
+        const rider = yield user_model_1.default.findById(riderId).select("currentLocation isOnline isOnboarded");
         if (!rider) {
             res.status(404).json({ message: "Rider not found" });
             return;
@@ -702,7 +713,7 @@ const getRiderHomeSummary = (req, res, next) => __awaiter(void 0, void 0, void 0
                 },
                 rider: {
                     isOnline: rider.isOnline,
-                    riderStatus: rider.riderStatus,
+                    isOnboarded: rider.isOnboarded,
                     hasLocation: Number.isFinite(riderLat) && Number.isFinite(riderLng),
                     location: Number.isFinite(riderLat) && Number.isFinite(riderLng)
                         ? { lat: riderLat, lng: riderLng }
@@ -783,22 +794,28 @@ const acceptDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
+        // Only fully approved riders may accept deliveries
+        const riderUser = yield user_model_1.default.findOne({
+            _id: riderId,
+            role: "rider",
+            isOnboarded: true,
+        }).select("_id");
+        if (!riderUser) {
+            res.status(403).json({
+                message: "Only approved riders can accept deliveries",
+            });
+            return;
+        }
         const { id } = req.params;
-        const matchRequest = yield delivery_match_request_model_1.default.findById(id);
+        // ── Path 1: match-request flow ──────────────────────────────────────
+        // Atomically claim the match request — only one rider wins the race
+        const matchRequest = yield delivery_match_request_model_1.default.findOneAndUpdate({
+            _id: id,
+            status: { $in: ["SEARCHING", "NO_RIDER_FOUND"] },
+            matchedRiderId: null,
+        }, { $set: { status: "RIDER_ASSIGNED", matchedRiderId: riderId } }, { new: true });
         if (matchRequest) {
-            if (!["SEARCHING", "NO_RIDER_FOUND"].includes(matchRequest.status)) {
-                res.status(400).json({
-                    message: "Match request is no longer available",
-                });
-                return;
-            }
-            if (matchRequest.matchedRiderId &&
-                String(matchRequest.matchedRiderId) !== String(riderId)) {
-                res.status(409).json({
-                    message: "Another rider already accepted this request",
-                });
-                return;
-            }
+            // Check for idempotent retry: delivery already created for this match
             if (matchRequest.createdDeliveryId) {
                 const existingDelivery = yield delivery_model_1.default.findById(matchRequest.createdDeliveryId);
                 if (existingDelivery) {
@@ -825,23 +842,21 @@ const acceptDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
                 customerId: matchRequest.customerId,
                 riderId,
             });
-            matchRequest.status = "RIDER_ASSIGNED";
-            matchRequest.matchedRiderId = riderId;
-            matchRequest.createdDeliveryId = String(delivery._id);
-            yield matchRequest.save();
+            // Record the created delivery on the match request
+            yield delivery_match_request_model_1.default.findByIdAndUpdate(id, {
+                createdDeliveryId: String(delivery._id),
+            });
             const riderDetails = yield buildRiderPreview(riderId);
-            const customerDeliveryPayload = createMobileDeliveryResponse(delivery, 0, "customer");
-            const payload = {
-                delivery: customerDeliveryPayload,
-                rider: riderDetails,
-                matchRequestId: matchRequest._id,
-            };
             (0, socket_service_1.emitToRiders)("match_request_taken", {
                 matchRequestId: matchRequest._id,
                 acceptedByRiderId: riderId,
                 deliveryId: delivery._id,
             });
-            (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_accepted", payload);
+            (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_accepted", {
+                delivery: createMobileDeliveryResponse(delivery, 0, "customer"),
+                rider: riderDetails,
+                matchRequestId: matchRequest._id,
+            });
             res.status(200).json({
                 success: true,
                 message: "Match request accepted and delivery created",
@@ -850,28 +865,38 @@ const acceptDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
             });
             return;
         }
-        const delivery = yield delivery_model_1.default.findById(id);
+        // Check if this rider already won a previous race for this match request
+        // (idempotent retry after network failure)
+        const alreadyClaimed = yield delivery_match_request_model_1.default.findOne({
+            _id: id,
+            matchedRiderId: riderId,
+        });
+        if (alreadyClaimed === null || alreadyClaimed === void 0 ? void 0 : alreadyClaimed.createdDeliveryId) {
+            const existingDelivery = yield delivery_model_1.default.findById(alreadyClaimed.createdDeliveryId);
+            if (existingDelivery) {
+                res.status(200).json({
+                    success: true,
+                    message: "Delivery already created for this match request",
+                    delivery: createMobileDeliveryResponse(existingDelivery, 0, "rider"),
+                });
+                return;
+            }
+        }
+        // ── Path 2: PENDING delivery (admin/manual flow) ────────────────────
+        // Any active rider may accept an unassigned PENDING delivery.
+        // Atomic update prevents double-acceptance.
+        const delivery = yield delivery_model_1.default.findOneAndUpdate({ _id: id, status: "PENDING" }, { $set: { status: "ONGOING", riderId } }, { new: true });
         if (!delivery) {
             res.status(404).json({
-                message: "Delivery or match request not found",
+                message: "Delivery not found or no longer available",
             });
             return;
         }
-        if (delivery.status !== "PENDING") {
-            res.status(400).json({
-                message: "Delivery is no longer available/pending",
-            });
-            return;
-        }
-        delivery.status = "ONGOING";
-        delivery.riderId = riderId;
-        yield delivery.save();
         const riderDetails = yield buildRiderPreview(riderId);
-        const payload = {
+        (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_accepted", {
             delivery: createMobileDeliveryResponse(delivery, 0, "customer"),
             rider: riderDetails,
-        };
-        (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_accepted", payload);
+        });
         res.status(200).json({
             success: true,
             message: "Delivery accepted successfully",
@@ -1009,40 +1034,48 @@ const getMyDeliveries = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
             query.$or.push({ customerId: objectId });
             query.$or.push({ riderId: objectId });
         }
+        const { status, limit } = req.query;
+        if (status)
+            query.status = String(status).toUpperCase();
+        const limitNum = limit ? parseInt(String(limit), 10) : 0;
         const deliveries = yield delivery_model_1.default.find(query)
             .sort({ createdAt: -1 })
-            .populate("riderId", "firstName lastName profileImageUrl riderStatus phoneNumber");
-        const mobileDeliveries = deliveries.map((delivery) => ({
-            id: delivery._id,
-            trackingId: delivery.trackingId,
-            status: delivery.status,
-            pricing: buildPricingForViewer(delivery.distance || 0, viewer, delivery.fee),
-            route: {
-                distanceKm: Number((delivery.distance || 0).toFixed(2)),
-                pickup: delivery.pickupLocation,
-                dropoff: delivery.dropoffLocation,
-            },
-            contact: {
-                customer: delivery.customer,
-                receiver: delivery.receiver,
-            },
-            package: {
-                type: delivery.packageType,
-                note: delivery.deliveryNote || "",
-                imageUrl: delivery.itemImage || null,
-            },
-            rider: delivery.riderId
-                ? {
-                    id: delivery.riderId._id,
-                    fullName: `${delivery.riderId.firstName} ${delivery.riderId.lastName}`,
-                    profileImageUrl: delivery.riderId.profileImageUrl || null,
-                    riderStatus: delivery.riderId.riderStatus || "incomplete",
-                    phoneNumber: delivery.riderId.phoneNumber || "",
-                }
-                : null,
-            createdAt: delivery.createdAt,
-            updatedAt: delivery.updatedAt,
-        }));
+            .limit(limitNum > 0 ? limitNum : 0)
+            .populate("riderId", "firstName lastName riderDetails phoneNumber isOnboarded");
+        const mobileDeliveries = deliveries.map((delivery) => {
+            var _a;
+            return ({
+                id: delivery._id,
+                trackingId: delivery.trackingId,
+                status: delivery.status,
+                pricing: buildPricingForViewer(delivery.distance || 0, viewer, delivery.fee),
+                route: {
+                    distanceKm: Number((delivery.distance || 0).toFixed(2)),
+                    pickup: delivery.pickupLocation,
+                    dropoff: delivery.dropoffLocation,
+                },
+                contact: {
+                    customer: delivery.customer,
+                    receiver: delivery.receiver,
+                },
+                package: {
+                    type: delivery.packageType,
+                    note: delivery.deliveryNote || "",
+                    imageUrl: delivery.itemImage || null,
+                },
+                rider: delivery.riderId
+                    ? {
+                        id: delivery.riderId._id,
+                        fullName: `${delivery.riderId.firstName} ${delivery.riderId.lastName}`,
+                        profileImage: ((_a = delivery.riderId.riderDetails) === null || _a === void 0 ? void 0 : _a.profileImage) || null,
+                        isOnboarded: delivery.riderId.isOnboarded,
+                        phoneNumber: delivery.riderId.phoneNumber || "",
+                    }
+                    : null,
+                createdAt: delivery.createdAt,
+                updatedAt: delivery.updatedAt,
+            });
+        });
         res.status(200).json({ success: true, deliveries: mobileDeliveries });
     }
     catch (error) {
@@ -1051,7 +1084,7 @@ const getMyDeliveries = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
 });
 exports.getMyDeliveries = getMyDeliveries;
 const getDeliveryById = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c, _d, _e, _f;
     try {
         const { id } = req.params;
         const viewer = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) === "rider" ? "rider" : "customer";
@@ -1059,9 +1092,17 @@ const getDeliveryById = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         if (mongoose_1.default.Types.ObjectId.isValid(id)) {
             query._id = { $in: [id, new mongoose_1.default.Types.ObjectId(id)] };
         }
-        const delivery = yield delivery_model_1.default.findOne(query).populate("riderId", "firstName lastName profileImageUrl riderStatus phoneNumber");
+        const delivery = yield delivery_model_1.default.findOne(query).populate("riderId", "firstName lastName riderDetails phoneNumber isOnboarded");
         if (!delivery) {
             res.status(404).json({ message: "Delivery not found" });
+            return;
+        }
+        const userId = (0, auth_middleware_1.getUserId)(req);
+        const isOwner = ((_b = delivery.customerId) === null || _b === void 0 ? void 0 : _b.toString()) === userId ||
+            (delivery.riderId && ((_c = delivery.riderId._id) === null || _c === void 0 ? void 0 : _c.toString()) === userId) ||
+            (delivery.riderId && ((_d = delivery.riderId) === null || _d === void 0 ? void 0 : _d.toString()) === userId);
+        if (!isOwner && ((_e = req.user) === null || _e === void 0 ? void 0 : _e.role) !== "admin") {
+            res.status(403).json({ message: "Forbidden" });
             return;
         }
         res.status(200).json({
@@ -1089,9 +1130,8 @@ const getDeliveryById = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                     ? {
                         id: delivery.riderId._id,
                         fullName: `${delivery.riderId.firstName} ${delivery.riderId.lastName}`,
-                        profileImageUrl: delivery.riderId.profileImageUrl || null,
-                        riderStatus: delivery.riderId.riderStatus ||
-                            "incomplete",
+                        profileImage: ((_f = delivery.riderId.riderDetails) === null || _f === void 0 ? void 0 : _f.profileImage) || null,
+                        isOnboarded: delivery.riderId.isOnboarded,
                         phoneNumber: delivery.riderId.phoneNumber || "",
                     }
                     : null,
@@ -1106,3 +1146,44 @@ const getDeliveryById = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.getDeliveryById = getDeliveryById;
+/**
+ * Rider marks a delivery as completed and triggers wallet payment
+ * @route POST /api/v1/deliveries/:id/complete
+ */
+const completeDelivery = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const riderId = (0, auth_middleware_1.getUserId)(req);
+        if (!riderId) {
+            res.status(401).json({ message: "Unauthorized" });
+            return;
+        }
+        const { id } = req.params;
+        const delivery = yield delivery_model_1.default.findOneAndUpdate({ _id: id, riderId, status: "ONGOING" }, { $set: { status: "DELIVERED" } }, { new: true });
+        if (!delivery) {
+            res.status(404).json({
+                message: "Delivery not found, not ongoing, or not assigned to you",
+            });
+            return;
+        }
+        const paymentResult = yield (0, wallet_controller_1.processDeliveryPayment)(delivery.customerId.toString(), riderId, delivery._id.toString(), delivery.fee);
+        (0, socket_service_1.emitToRoom)(`customer-${delivery.customerId}`, "delivery_completed", {
+            deliveryId: delivery._id,
+            trackingId: delivery.trackingId,
+            payment: paymentResult,
+        });
+        res.status(200).json({
+            success: true,
+            message: "Delivery completed",
+            delivery: {
+                id: delivery._id,
+                trackingId: delivery.trackingId,
+                status: delivery.status,
+            },
+            payment: paymentResult,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.completeDelivery = completeDelivery;

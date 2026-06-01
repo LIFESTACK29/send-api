@@ -41,6 +41,12 @@ const TransactionSchema = new mongoose_1.Schema({
         required: true,
         index: true,
     },
+    rideId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "Ride",
+        index: true,
+        sparse: true,
+    },
     type: {
         type: String,
         enum: ["credit", "debit"],
@@ -53,6 +59,13 @@ const TransactionSchema = new mongoose_1.Schema({
             "delivery_fee",
             "delivery_earning",
             "withdrawal",
+            "ride_fare_hold",
+            "ride_fare",
+            "ride_earning",
+            "settlement_payout",
+            "settlement_reversal",
+            "ride_refund",
+            "platform_commission",
         ],
         required: true,
     },
@@ -68,7 +81,7 @@ const TransactionSchema = new mongoose_1.Schema({
     },
     status: {
         type: String,
-        enum: ["pending", "success", "failed"],
+        enum: ["pending", "completed", "cancelled", "success", "failed"],
         default: "pending",
     },
     description: {
@@ -77,6 +90,11 @@ const TransactionSchema = new mongoose_1.Schema({
     },
     metadata: {
         type: mongoose_1.Schema.Types.Mixed,
+    },
+    idempotencyKey: {
+        type: String,
+        index: true,
+        sparse: true,
     },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model("Transaction", TransactionSchema);

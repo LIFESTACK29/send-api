@@ -28,7 +28,6 @@ const getRiderDistanceFare = (distance) => Math.ceil((distance || 0) * PER_KM_FE
 const startDeliveryWorker = () => {
     const worker = new bullmq_1.Worker("delivery-matching", (job) => __awaiter(void 0, void 0, void 0, function* () {
         const { type, deliveryId, matchRequestId, checkCount = 0, } = job.data || {};
-        console.log(`[Worker] Processing ${type || "UNKNOWN"} | delivery=${deliveryId || "-"} | match=${matchRequestId || "-"}`);
         if (type === "MATCH_REQUEST_BROADCAST") {
             const matchRequest = yield delivery_match_request_model_1.default.findById(matchRequestId);
             if (!matchRequest)
@@ -163,12 +162,6 @@ const startDeliveryWorker = () => {
             return;
         }
     }), { connection: redis_1.default });
-    worker.on("completed", (job) => {
-        console.log(`[Worker] Job ${job.id} completed!`);
-    });
-    worker.on("failed", (job, err) => {
-        console.error(`[Worker] Job ${job === null || job === void 0 ? void 0 : job.id} failed with error: ${err.message}`);
-    });
-    console.log("🏁 Delivery matching worker started");
+    worker.on("failed", () => { });
 };
 exports.startDeliveryWorker = startDeliveryWorker;

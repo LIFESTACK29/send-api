@@ -49,6 +49,10 @@ const OtpSchema = new mongoose_1.Schema({
         required: true,
         index: { expires: 0 }, // TTL index — auto-deletes when expiresAt is reached
     },
+    attempts: {
+        type: Number,
+        default: 0,
+    },
     createdAt: {
         type: Date,
         default: Date.now,

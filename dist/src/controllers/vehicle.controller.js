@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOnboardingStatus = exports.getVehicle = exports.getUserVehicles = exports.createVehicle = exports.getVehicleTypes = void 0;
+exports.getOnboardingStatus = exports.uploadVehicleImage = exports.getVehicle = exports.getUserVehicles = exports.createVehicle = exports.getVehicleTypes = void 0;
 const vehicle_model_1 = __importDefault(require("../models/vehicle.model"));
 const user_model_1 = __importDefault(require("../models/user.model"));
 const catchasync_util_1 = require("../utils/catchasync.util");
@@ -21,26 +21,26 @@ const VEHICLE_TYPES = [
     {
         type: "BICYCLE",
         label: "Bicycle",
-        icon: "bicycle",
+        icon: "🚴",
         description: "Two-wheeled pedal vehicle",
     },
     {
         type: "MOTORCYCLE",
         label: "Motorcycle",
-        icon: "motorcycle",
+        icon: "🏍️",
         description: "Two-wheeled motorized vehicle",
     },
     {
         type: "TRICYCLE",
         label: "Tricycle",
-        icon: "tricycle",
+        icon: "🛺",
         description: "Three-wheeled vehicle (Tuk-tuk)",
     },
     {
         type: "CAR",
         label: "Car",
-        icon: "car",
-        description: "Four-wheeled sedan/sedan vehicle",
+        icon: "🚗",
+        description: "Four-wheeled sedan vehicle",
     },
 ];
 /**
@@ -85,7 +85,6 @@ exports.createVehicle = (0, catchasync_util_1.CatchAsync)((req, res) => __awaite
         vehicleType,
         verificationStatus: "pending",
     });
-    yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
     const accessState = yield (0, onboarding_service_1.getRiderOnboardingState)(userId);
     res.status(201).json({
         success: true,
@@ -93,7 +92,6 @@ exports.createVehicle = (0, catchasync_util_1.CatchAsync)((req, res) => __awaite
         data: {
             vehicleId: vehicle._id,
             vehicleType: vehicle.vehicleType,
-            nextStep: accessState.nextStep,
             accessState,
         },
     });
@@ -138,6 +136,45 @@ exports.getVehicle = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(v
     });
 }));
 /**
+ * @desc    Upload vehicle image
+ * @route   POST /api/v1/riders/:userId/vehicles/:vehicleId/image
+ * @access  Private
+ */
+exports.uploadVehicleImage = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { userId, vehicleId } = req.params;
+    if (!req.file) {
+        res.status(400).json({
+            success: false,
+            message: "Vehicle image is required",
+        });
+        return;
+    }
+    const vehicle = yield vehicle_model_1.default.findOne({
+        _id: vehicleId,
+        userId,
+    });
+    if (!vehicle) {
+        res.status(404).json({
+            success: false,
+            message: "Vehicle not found",
+        });
+        return;
+    }
+    const imageUrl = `/uploads/vehicles/${req.file.filename}`;
+    vehicle.imageUrl = imageUrl;
+    yield vehicle.save();
+    const accessState = yield (0, onboarding_service_1.getRiderOnboardingState)(userId);
+    res.status(200).json({
+        success: true,
+        message: "Vehicle image uploaded successfully",
+        data: {
+            vehicleId: vehicle._id,
+            imageUrl: vehicle.imageUrl,
+            accessState,
+        },
+    });
+}));
+/**
  * @desc    Get rider onboarding status
  * @route   GET /api/v1/riders/:userId/onboarding-status
  * @access  Private
@@ -145,8 +182,8 @@ exports.getVehicle = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(v
 exports.getOnboardingStatus = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { userId } = req.params;
     // Get user
-    const user = yield (0, onboarding_service_1.syncUserOnboardingState)(userId);
-    if (!user) {
+    const user = yield user_model_1.default.findById(userId);
+    if (!user || user.role !== "rider") {
         res.status(404).json({
             success: false,
             message: "User not found",
@@ -154,24 +191,13 @@ exports.getOnboardingStatus = (0, catchasync_util_1.CatchAsync)((req, res) => __
         return;
     }
     const accessState = yield (0, onboarding_service_1.getRiderOnboardingState)(userId);
-    const vehicles = yield vehicle_model_1.default.find({ userId });
     res.status(200).json({
         success: true,
         data: {
             userId,
-            riderStatus: user.riderStatus,
-            onboardingStage: accessState.onboardingStage,
-            verificationStatus: accessState.verificationStatus,
+            isOnboarded: user.isOnboarded,
+            riderDetails: user.riderDetails || null,
             accessState,
-            onboardingProgress: accessState.onboardingProgress,
-            completionPercentage: accessState.completionPercentage,
-            vehicleSelection: {
-                totalVehicles: vehicles.length,
-                vehicles: vehicles.map((v) => ({
-                    id: v._id,
-                    type: v.vehicleType,
-                })),
-            },
         },
     });
 }));

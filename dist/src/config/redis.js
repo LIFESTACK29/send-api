@@ -12,10 +12,5 @@ exports.redisConnection = new ioredis_1.default(REDIS_URL, {
     maxRetriesPerRequest: null,
     tls: REDIS_URL.startsWith("rediss://") ? {} : undefined,
 });
-exports.redisConnection.on("connect", () => {
-    console.log("✅ Connected to Redis");
-});
-exports.redisConnection.on("error", (err) => {
-    console.error("❌ Redis connection error:", err);
-});
+exports.redisConnection.on("error", () => { });
 exports.default = exports.redisConnection;

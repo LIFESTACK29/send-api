@@ -33,10 +33,8 @@ const addMatchRequestBroadcastJob = (matchRequest) => __awaiter(void 0, void 0, 
             removeOnFail: true,
             delay: 2000,
         });
-        console.log(`[Queue] Added match request broadcast job for ${matchRequest._id}`);
     }
     catch (error) {
-        console.error(`[Queue] Error adding match request broadcast job:`, error);
     }
 });
 exports.addMatchRequestBroadcastJob = addMatchRequestBroadcastJob;
@@ -54,10 +52,8 @@ const addMatchRequestTimeoutJob = (matchRequest) => __awaiter(void 0, void 0, vo
             removeOnComplete: true,
             removeOnFail: true,
         });
-        console.log(`[Queue] Added match request timeout job for ${matchRequest._id}`);
     }
     catch (error) {
-        console.error(`[Queue] Error adding match request timeout job:`, error);
     }
 });
 exports.addMatchRequestTimeoutJob = addMatchRequestTimeoutJob;
@@ -76,10 +72,8 @@ const addManualAssignmentCheckJob = (delivery_1, ...args_1) => __awaiter(void 0,
             removeOnComplete: true,
             removeOnFail: true,
         });
-        console.log(`[Queue] Added manual assignment check job for ${delivery._id} (check ${checkCount})`);
     }
     catch (error) {
-        console.error(`[Queue] Error adding manual assignment check job:`, error);
     }
 });
 exports.addManualAssignmentCheckJob = addManualAssignmentCheckJob;

@@ -45,7 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handleCallback = exports.processDeliveryPayment = exports.withdraw = exports.getBankAccount = exports.saveBankAccount = exports.resolveAccount = exports.getBanks = exports.handleWebhook = exports.getTransactions = exports.getWalletStatus = exports.getWalletBalance = exports.createWallet = void 0;
+exports.handleCallback = exports.resetWallet = exports.processDeliveryPayment = exports.withdraw = exports.getBankAccount = exports.saveBankAccount = exports.resolveAccount = exports.getBanks = exports.handleWebhook = exports.getTransactions = exports.getWalletStatus = exports.getWalletBalance = exports.createWallet = void 0;
 const crypto = __importStar(require("crypto"));
 const wallet_model_1 = __importDefault(require("../models/wallet.model"));
 const transaction_model_1 = __importDefault(require("../models/transaction.model"));
@@ -58,7 +58,7 @@ const socket_service_1 = require("../services/socket.service");
 const notification_service_1 = require("../services/notification.service");
 const wallet_service_1 = require("../services/wallet.service");
 const PLATFORM_COMMISSION_RATE = 0.1; // 10%
-const MIN_WITHDRAWAL_AMOUNT = 100000; // ₦1,000 in kobo
+const MIN_WITHDRAWAL_AMOUNT = 1000; // ₦10 in kobo (lowered for testing)
 const maskAccountNumber = (accountNumber) => {
     if (!accountNumber)
         return "";
@@ -77,7 +77,6 @@ const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
     var _a, _b, _c, _d;
     try {
         const userId = (0, auth_middleware_1.getUserId)(req);
-        console.log(`[Wallet] Incoming creation request for user: ${userId}`);
         if (!userId) {
             res.status(401).json({ message: "Unauthorized" });
             return;
@@ -134,7 +133,7 @@ const createWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
                 first_name: user.firstName,
                 last_name: user.lastName,
                 phone: user.phoneNumber,
-                preferred_bank: "test-bank",
+                preferred_bank: "wema-bank",
             });
             const dedicatedAccount = assignResponse.data;
             if (!wallet) {
@@ -369,17 +368,18 @@ exports.getTransactions = getTransactions;
 const handleWebhook = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
-        // 1. Verify Paystack signature
+        // 1. Verify Paystack signature against the raw body bytes (not re-serialized JSON)
+        const rawBody = req.body;
         const hash = crypto
             .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
-            .update(JSON.stringify(req.body))
+            .update(rawBody)
             .digest("hex");
         const signature = req.get("x-paystack-signature");
         if (hash !== signature) {
             res.status(401).json({ message: "Invalid signature" });
             return;
         }
-        const payload = req.body;
+        const payload = JSON.parse(rawBody.toString());
         const { event, data } = payload;
         // 2. Audit Log (as requested)
         yield log_model_1.default.create({
@@ -411,12 +411,12 @@ const handleWebhook = (req, res, next) => __awaiter(void 0, void 0, void 0, func
                 yield handleAccountAssignFailed(data);
                 break;
             default:
-                console.log(`[Webhook] Unhandled event: ${event}`);
         }
         res.status(200).json({ message: "Webhook received" });
     }
     catch (error) {
-        res.status(200).json({ message: "Webhook received with errors" });
+        // Return 500 so Paystack retries — do NOT swallow processing errors with 200
+        res.status(500).json({ message: "Webhook processing failed" });
     }
 });
 exports.handleWebhook = handleWebhook;
@@ -463,10 +463,14 @@ const handleChargeSuccess = (data) => __awaiter(void 0, void 0, void 0, function
     });
 });
 /**
- * Handle transfer.success — mark withdrawal as successful
+ * Handle transfer.success — routes to settlement or withdrawal handler based on reference prefix
  */
 const handleTransferSuccess = (data) => __awaiter(void 0, void 0, void 0, function* () {
     const reference = data.reference;
+    if (reference === null || reference === void 0 ? void 0 : reference.startsWith("setl_")) {
+        return handleSettlementSuccess(reference);
+    }
+    // Withdrawal path
     const transaction = yield transaction_model_1.default.findOne({ reference });
     if (!transaction)
         return;
@@ -474,16 +478,19 @@ const handleTransferSuccess = (data) => __awaiter(void 0, void 0, void 0, functi
     yield transaction.save();
 });
 /**
- * Handle transfer.failed — refund the user's wallet
+ * Handle transfer.failed — routes to settlement or withdrawal handler
  */
 const handleTransferFailed = (data) => __awaiter(void 0, void 0, void 0, function* () {
     const reference = data.reference;
+    if (reference === null || reference === void 0 ? void 0 : reference.startsWith("setl_")) {
+        return handleSettlementFailed(reference, data.reason || "Transfer failed");
+    }
+    // Withdrawal path
     const transaction = yield transaction_model_1.default.findOne({ reference });
     if (!transaction || transaction.status === "failed")
         return;
     transaction.status = "failed";
     yield transaction.save();
-    // Refund the wallet
     const wallet = yield wallet_model_1.default.findOne({ userId: transaction.userId });
     if (wallet) {
         wallet.balance += transaction.amount;
@@ -491,10 +498,120 @@ const handleTransferFailed = (data) => __awaiter(void 0, void 0, void 0, functio
     }
 });
 /**
- * Handle transfer.reversed — refund the user's wallet (same as failed)
+ * Handle transfer.reversed — routes to settlement or withdrawal handler
  */
 const handleTransferReversed = (data) => __awaiter(void 0, void 0, void 0, function* () {
+    const reference = data.reference;
+    if (reference === null || reference === void 0 ? void 0 : reference.startsWith("setl_")) {
+        return handleSettlementReversed(reference);
+    }
     return handleTransferFailed(data);
+});
+// ── Settlement webhook handlers ───────────────────────────────────────────────
+const handleSettlementSuccess = (reference) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const Settlement = (yield Promise.resolve().then(() => __importStar(require("../models/settlement.model")))).default;
+    const Ride = (yield Promise.resolve().then(() => __importStar(require("../models/ride.model")))).default;
+    const settlement = yield Settlement.findOne({ paystackReference: reference });
+    if (!settlement || settlement.status === "SETTLED")
+        return;
+    const session = yield transaction_model_1.default.startSession();
+    session.startTransaction();
+    try {
+        const riderWallet = yield wallet_model_1.default.findOne({ userId: settlement.riderId }).session(session);
+        const debitRef = `setl_payout_${settlement._id}_${Date.now()}`;
+        yield transaction_model_1.default.create([
+            {
+                userId: settlement.riderId,
+                type: "debit",
+                source: "settlement_payout",
+                amount: settlement.amount,
+                reference: debitRef,
+                status: "completed",
+                description: `Settlement payout`,
+                metadata: { settlementId: settlement._id },
+            },
+        ], { session });
+        const balanceBefore = (_a = riderWallet === null || riderWallet === void 0 ? void 0 : riderWallet.balance) !== null && _a !== void 0 ? _a : 0;
+        yield wallet_model_1.default.findOneAndUpdate({ userId: settlement.riderId }, { $inc: { balance: -settlement.amount } }, { session });
+        settlement.status = "SETTLED";
+        settlement.settledAt = new Date();
+        settlement.walletBalanceAfterSettlement = Math.max(0, balanceBefore - settlement.amount);
+        yield settlement.save({ session });
+        yield session.commitTransaction();
+    }
+    catch (err) {
+        yield session.abortTransaction();
+        throw err;
+    }
+    finally {
+        session.endSession();
+    }
+    const { emitToRoom } = yield Promise.resolve().then(() => __importStar(require("../services/socket.service")));
+    emitToRoom("ops_room", "settlement_status_update", {
+        settlementId: settlement._id,
+        status: "SETTLED",
+        riderId: settlement.riderId,
+    });
+});
+const handleSettlementFailed = (reference, reason) => __awaiter(void 0, void 0, void 0, function* () {
+    const Settlement = (yield Promise.resolve().then(() => __importStar(require("../models/settlement.model")))).default;
+    const Ride = (yield Promise.resolve().then(() => __importStar(require("../models/ride.model")))).default;
+    const settlement = yield Settlement.findOne({ paystackReference: reference });
+    if (!settlement || settlement.status === "FAILED")
+        return;
+    settlement.status = "FAILED";
+    settlement.paystackFailureReason = reason;
+    yield settlement.save();
+    // Release ride locks so they can be re-settled
+    yield Ride.updateMany({ _id: { $in: settlement.rideIds } }, { settlementId: null });
+    const { emitToRoom } = yield Promise.resolve().then(() => __importStar(require("../services/socket.service")));
+    emitToRoom("ops_room", "settlement_status_update", {
+        settlementId: settlement._id,
+        status: "FAILED",
+        riderId: settlement.riderId,
+        reason,
+    });
+});
+const handleSettlementReversed = (reference) => __awaiter(void 0, void 0, void 0, function* () {
+    const Settlement = (yield Promise.resolve().then(() => __importStar(require("../models/settlement.model")))).default;
+    const settlement = yield Settlement.findOne({ paystackReference: reference });
+    if (!settlement || settlement.status === "REVERSED")
+        return;
+    const session = yield transaction_model_1.default.startSession();
+    session.startTransaction();
+    try {
+        const reversalRef = `setl_reversal_${settlement._id}_${Date.now()}`;
+        yield transaction_model_1.default.create([
+            {
+                userId: settlement.riderId,
+                type: "credit",
+                source: "settlement_reversal",
+                amount: settlement.amount,
+                reference: reversalRef,
+                status: "completed",
+                description: `Settlement reversal`,
+                metadata: { settlementId: settlement._id },
+            },
+        ], { session });
+        yield wallet_model_1.default.findOneAndUpdate({ userId: settlement.riderId }, { $inc: { balance: settlement.amount } }, { session });
+        settlement.status = "REVERSED";
+        yield settlement.save({ session });
+        yield session.commitTransaction();
+    }
+    catch (err) {
+        yield session.abortTransaction();
+        throw err;
+    }
+    finally {
+        session.endSession();
+    }
+    const { emitToRoom } = yield Promise.resolve().then(() => __importStar(require("../services/socket.service")));
+    emitToRoom("ops_room", "settlement_status_update", {
+        settlementId: settlement._id,
+        status: "REVERSED",
+        riderId: settlement.riderId,
+    });
 });
 /**
  * Handle DVA Assign Success
@@ -559,7 +676,6 @@ const handleAccountAssignSuccess = (event, data) => __awaiter(void 0, void 0, vo
  * Handle DVA Assign Failed
  */
 const handleAccountAssignFailed = (data) => __awaiter(void 0, void 0, void 0, function* () {
-    console.error(`[Webhook] DVA assignment failed for ${data.customer.email}`);
     yield user_model_1.default.findOneAndUpdate({ email: data.customer.email }, { walletProvisioningStatus: "failed" });
 });
 /**
@@ -707,49 +823,69 @@ const withdraw = (req, res, next) => __awaiter(void 0, void 0, void 0, function*
             res.status(401).json({ message: "Unauthorized" });
             return;
         }
-        const { amount } = req.body; // amount in kobo
-        if (!amount || amount <= 0) {
-            res.status(400).json({ message: "Valid amount is required" });
+        // Idempotency — client must supply a unique key per withdrawal attempt
+        const idempotencyKey = req.headers["idempotency-key"];
+        if (!idempotencyKey) {
+            res.status(400).json({
+                message: "Idempotency-Key header is required",
+            });
             return;
         }
-        if (amount < MIN_WITHDRAWAL_AMOUNT) {
+        // If this key was already processed, return the existing transaction
+        const existingTx = yield transaction_model_1.default.findOne({ idempotencyKey });
+        if (existingTx) {
+            res.status(200).json({
+                message: "Withdrawal already processed",
+                transaction: {
+                    id: existingTx._id,
+                    amount: existingTx.amount,
+                    amountInNaira: existingTx.amount / 100,
+                    reference: existingTx.reference,
+                    status: existingTx.status,
+                },
+            });
+            return;
+        }
+        const { amount } = req.body; // amount in Naira — backend converts to kobo
+        if (!amount || typeof amount !== "number" || amount <= 0) {
+            res.status(400).json({ message: "Valid amount in Naira is required" });
+            return;
+        }
+        const amountKobo = Math.round(amount * 100);
+        if (amountKobo < MIN_WITHDRAWAL_AMOUNT) {
             res.status(400).json({
                 message: `Minimum withdrawal amount is ₦${MIN_WITHDRAWAL_AMOUNT / 100}`,
             });
             return;
         }
-        // Check wallet balance
-        const wallet = yield wallet_model_1.default.findOne({ userId });
-        if (!wallet) {
-            res.status(404).json({ message: "Wallet not found" });
-            return;
-        }
-        if (wallet.balance < amount) {
-            res.status(400).json({ message: "Insufficient balance" });
-            return;
-        }
-        // Get bank account
+        // Get bank account before touching wallet
         const bankAccount = yield bank_account_model_1.default.findOne({ userId });
         if (!bankAccount) {
-            res.status(400).json({
-                message: "Please add a bank account first",
+            res.status(400).json({ message: "Please add a bank account first" });
+            return;
+        }
+        // Atomically debit wallet — only succeeds if balance is sufficient
+        const wallet = yield wallet_model_1.default.findOneAndUpdate({ userId, balance: { $gte: amountKobo } }, { $inc: { balance: -amountKobo } }, { new: true });
+        if (!wallet) {
+            // Either wallet doesn't exist or balance was insufficient
+            const exists = yield wallet_model_1.default.exists({ userId });
+            res.status(exists ? 400 : 404).json({
+                message: exists ? "Insufficient balance" : "Wallet not found",
             });
             return;
         }
         // Generate unique reference
         const reference = `WD-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-        // Debit wallet first
-        wallet.balance -= amount;
-        yield wallet.save();
-        // Create pending transaction
+        // Create pending transaction (stores idempotency key)
         const transaction = yield transaction_model_1.default.create({
             userId,
             type: "debit",
             source: "withdrawal",
-            amount,
+            amount: amountKobo,
             reference,
+            idempotencyKey,
             status: "pending",
-            description: `Withdrawal to ${bankAccount.bankName} - ${bankAccount.accountNumber}`,
+            description: `Withdrawal to ${bankAccount.bankName} - ${maskAccountNumber(bankAccount.accountNumber)}`,
             metadata: {
                 bankName: bankAccount.bankName,
                 accountNumber: bankAccount.accountNumber,
@@ -758,12 +894,11 @@ const withdraw = (req, res, next) => __awaiter(void 0, void 0, void 0, function*
         });
         // Initiate Paystack transfer
         try {
-            yield paystackService.initiateTransfer(amount, bankAccount.paystackRecipientCode, `RahaSend withdrawal - ${reference}`, reference);
+            yield paystackService.initiateTransfer(amountKobo, bankAccount.paystackRecipientCode, `RahaSend withdrawal - ${reference}`, reference);
         }
         catch (transferError) {
-            // If transfer fails, refund wallet and mark tx as failed
-            wallet.balance += amount;
-            yield wallet.save();
+            // Refund atomically and mark transaction failed
+            yield wallet_model_1.default.findOneAndUpdate({ userId }, { $inc: { balance: amountKobo } });
             transaction.status = "failed";
             yield transaction.save();
             res.status(500).json({
@@ -840,6 +975,38 @@ const processDeliveryPayment = (customerId, riderId, deliveryId, feeInNaira) => 
     return { success: true, message: "Payment processed successfully" };
 });
 exports.processDeliveryPayment = processDeliveryPayment;
+/**
+ * @desc    Admin: reset a user's wallet balance to 0 (dev/testing only)
+ * @route   POST /api/v1/wallet/admin/reset
+ * @access  Private (admin only)
+ */
+const resetWallet = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        if (((_a = req.user) === null || _a === void 0 ? void 0 : _a.role) !== "admin") {
+            res.status(403).json({ message: "Forbidden — admin only" });
+            return;
+        }
+        const { userId } = req.body;
+        if (!userId) {
+            res.status(400).json({ message: "userId is required" });
+            return;
+        }
+        const wallet = yield wallet_model_1.default.findOneAndUpdate({ userId }, { $set: { balance: 0 } }, { new: true });
+        if (!wallet) {
+            res.status(404).json({ message: "Wallet not found" });
+            return;
+        }
+        res.status(200).json({
+            message: "Wallet balance reset to 0",
+            wallet: { id: wallet._id, balance: 0, balanceInNaira: 0 },
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+exports.resetWallet = resetWallet;
 /**
  * @desc    Paystack callback handler (Redirects)
  * @route   GET /api/v1/wallet/callback

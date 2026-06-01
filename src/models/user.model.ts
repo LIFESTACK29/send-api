@@ -46,6 +46,7 @@ export interface IUser extends Document {
     isOnboarded: boolean;
     updatedAt: Date;
     riderDetails?: IRiderDetails;
+    walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
     kekeRiderProfile?: IKekeRiderProfile;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
@@ -91,6 +92,11 @@ const UserSchema: Schema = new Schema(
         addresses: { type: [AddressSchema], default: [] },
         pushToken: { type: String },
         riderDetails: RiderDetailsSchema,
+        walletProvisioningStatus: {
+            type: String,
+            enum: ["not_started", "creating", "active", "failed"],
+            default: "not_started",
+        },
         kekeRiderProfile: {
             campusId: { type: Schema.Types.ObjectId, ref: "Campus" },
             onboardedBy: { type: Schema.Types.ObjectId, ref: "User" },

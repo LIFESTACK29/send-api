@@ -15,9 +15,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updatePushToken = exports.deleteAddress = exports.editAddress = exports.addAddress = exports.updateProfile = exports.getProfile = void 0;
 const user_model_1 = __importDefault(require("../models/user.model"));
 const onboarding_service_1 = require("../services/onboarding.service");
+const catchasync_util_1 = require("../utils/catchasync.util");
 const buildUserResponse = (user) => __awaiter(void 0, void 0, void 0, function* () {
     const accessState = yield (0, onboarding_service_1.getUserAccessState)(user);
-    return {
+    const response = {
         id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -25,225 +26,187 @@ const buildUserResponse = (user) => __awaiter(void 0, void 0, void 0, function* 
         phoneNumber: user.phoneNumber,
         role: user.role,
         isOnboarded: user.isOnboarded,
-        riderStatus: user.riderStatus,
-        onboardingStage: user.onboardingStage,
-        verificationStatus: user.verificationStatus,
-        profileImageUrl: user.profileImageUrl,
-        verificationNotes: user.verificationNotes,
         accessState,
     };
+    // Include rider details if user is a rider
+    if (user.role === "rider" && user.riderDetails) {
+        response.riderDetails = {
+            nin: user.riderDetails.nin,
+            vehicleType: user.riderDetails.vehicleType,
+            submittedAt: user.riderDetails.submittedAt,
+        };
+    }
+    return response;
 });
 /**
  * @desc    Get current user profile
  * @route   GET /api/v1/user/profile
  * @access  Private
  */
-const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.getProfile = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        if (!userId) {
-            res.status(401).json({ message: "Unauthorized" });
-            return;
-        }
-        const user = yield user_model_1.default.findById(userId);
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        res.status(200).json({
-            user: yield buildUserResponse(user),
-        });
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!userId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
     }
-    catch (error) {
-        console.error("Error in getProfile:", error);
-        res.status(500).json({ message: "Internal server error" });
+    const user = yield user_model_1.default.findById(userId);
+    if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
     }
-});
-exports.getProfile = getProfile;
+    res.status(200).json({
+        user: yield buildUserResponse(user),
+    });
+}));
 /**
  * @desc    Update user profile
  * @route   PATCH /api/v1/user/profile
  * @access  Private
  */
-const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.updateProfile = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        if (!userId) {
-            res.status(401).json({ message: "Unauthorized" });
-            return;
-        }
-        const { firstName, lastName, phoneNumber } = req.body;
-        const user = yield user_model_1.default.findById(userId);
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        if (firstName !== undefined)
-            user.firstName = firstName;
-        if (lastName !== undefined)
-            user.lastName = lastName;
-        if (phoneNumber !== undefined)
-            user.phoneNumber = phoneNumber;
-        yield user.save();
-        res.status(200).json({
-            message: "Profile updated successfully",
-            user: yield buildUserResponse(user),
-        });
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!userId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
     }
-    catch (error) {
-        console.error("Error in updateProfile:", error);
-        res.status(500).json({ message: "Internal server error" });
+    const { firstName, lastName, phoneNumber } = req.body;
+    const user = yield user_model_1.default.findById(userId);
+    if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
     }
-});
-exports.updateProfile = updateProfile;
+    if (firstName !== undefined)
+        user.firstName = firstName;
+    if (lastName !== undefined)
+        user.lastName = lastName;
+    if (phoneNumber !== undefined)
+        user.phoneNumber = phoneNumber;
+    yield user.save();
+    res.status(200).json({
+        message: "Profile updated successfully",
+        user: yield buildUserResponse(user),
+    });
+}));
 /**
  * @desc    Add an address
  * @route   POST /api/v1/user/addresses
  * @access  Private
  */
-const addAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.addAddress = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        if (!userId) {
-            res.status(401).json({ message: "Unauthorized" });
-            return;
-        }
-        const { name, location, landmark } = req.body;
-        if (!name || !location) {
-            res.status(400).json({ message: "Name and location are required" });
-            return;
-        }
-        const user = yield user_model_1.default.findByIdAndUpdate(userId, { $push: { addresses: { name, location, landmark } } }, { new: true, runValidators: true });
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        res.status(201).json({
-            message: "Address added successfully",
-            user: yield buildUserResponse(user),
-        });
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!userId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
     }
-    catch (error) {
-        console.error("Error in addAddress:", error);
-        res.status(500).json({ message: "Internal server error" });
+    const { name, location, landmark } = req.body;
+    if (!name || !location) {
+        res.status(400).json({ message: "Name and location are required" });
+        return;
     }
-});
-exports.addAddress = addAddress;
+    const user = yield user_model_1.default.findByIdAndUpdate(userId, { $push: { addresses: { name, location, landmark } } }, { new: true, runValidators: true });
+    if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
+    }
+    res.status(201).json({
+        message: "Address added successfully",
+        user: yield buildUserResponse(user),
+    });
+}));
 /**
  * @desc    Edit an address
  * @route   PUT /api/v1/user/addresses/:addressId
  * @access  Private
  */
-const editAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.editAddress = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        const { addressId } = req.params;
-        if (!userId || !addressId) {
-            res.status(400).json({
-                message: "Address ID is required",
-            });
-            return;
-        }
-        const { name, location, landmark } = req.body;
-        const updateFields = {};
-        if (name !== undefined)
-            updateFields["addresses.$[elem].name"] = name;
-        if (location !== undefined)
-            updateFields["addresses.$[elem].location"] = location;
-        if (landmark !== undefined)
-            updateFields["addresses.$[elem].landmark"] = landmark;
-        if (Object.keys(updateFields).length === 0) {
-            res.status(400).json({
-                message: "No fields to update for this address",
-            });
-            return;
-        }
-        const user = yield user_model_1.default.findOneAndUpdate({ _id: userId }, { $set: updateFields }, {
-            new: true,
-            runValidators: true,
-            arrayFilters: [{ "elem._id": addressId }],
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const { addressId } = req.params;
+    if (!userId || !addressId) {
+        res.status(400).json({
+            message: "Address ID is required",
         });
-        if (!user) {
-            res.status(404).json({ message: "User or address not found" });
-            return;
-        }
-        res.status(200).json({
-            message: "Address updated successfully",
-            user: yield buildUserResponse(user),
+        return;
+    }
+    const { name, location, landmark } = req.body;
+    const updateFields = {};
+    if (name !== undefined)
+        updateFields["addresses.$[elem].name"] = name;
+    if (location !== undefined)
+        updateFields["addresses.$[elem].location"] = location;
+    if (landmark !== undefined)
+        updateFields["addresses.$[elem].landmark"] = landmark;
+    if (Object.keys(updateFields).length === 0) {
+        res.status(400).json({
+            message: "No fields to update for this address",
         });
+        return;
     }
-    catch (error) {
-        console.error("Error in editAddress:", error);
-        res.status(500).json({ message: "Internal server error" });
+    const user = yield user_model_1.default.findOneAndUpdate({ _id: userId }, { $set: updateFields }, {
+        new: true,
+        runValidators: true,
+        arrayFilters: [{ "elem._id": addressId }],
+    });
+    if (!user) {
+        res.status(404).json({ message: "User or address not found" });
+        return;
     }
-});
-exports.editAddress = editAddress;
+    res.status(200).json({
+        message: "Address updated successfully",
+        user: yield buildUserResponse(user),
+    });
+}));
 /**
  * @desc    Delete an address
  * @route   DELETE /api/v1/user/addresses/:addressId
  * @access  Private
  */
-const deleteAddress = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.deleteAddress = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        const { addressId } = req.params;
-        if (!userId || !addressId) {
-            res.status(400).json({
-                message: "Address ID is required",
-            });
-            return;
-        }
-        const user = yield user_model_1.default.findOneAndUpdate({ _id: userId }, { $pull: { addresses: { _id: addressId } } }, { new: true });
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        res.status(200).json({
-            message: "Address deleted successfully",
-            user: yield buildUserResponse(user),
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const { addressId } = req.params;
+    if (!userId || !addressId) {
+        res.status(400).json({
+            message: "Address ID is required",
         });
+        return;
     }
-    catch (error) {
-        console.error("Error in deleteAddress:", error);
-        res.status(500).json({ message: "Internal server error" });
+    const user = yield user_model_1.default.findOneAndUpdate({ _id: userId }, { $pull: { addresses: { _id: addressId } } }, { new: true });
+    if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
     }
-});
-exports.deleteAddress = deleteAddress;
+    res.status(200).json({
+        message: "Address deleted successfully",
+        user: yield buildUserResponse(user),
+    });
+}));
 /**
  * @desc    Update user's push token
  * @route   PATCH /api/v1/user/push-token
  * @access  Private
  */
-const updatePushToken = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.updatePushToken = (0, catchasync_util_1.CatchAsync)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    try {
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-        const { pushToken } = req.body;
-        if (!userId) {
-            res.status(401).json({ message: "Unauthorized" });
-            return;
-        }
-        if (!pushToken) {
-            res.status(400).json({ message: "Push token is required" });
-            return;
-        }
-        const user = yield user_model_1.default.findByIdAndUpdate(userId, { pushToken }, { new: true });
-        if (!user) {
-            res.status(404).json({ message: "User not found" });
-            return;
-        }
-        res.status(200).json({
-            message: "Push token updated successfully",
-        });
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const { pushToken } = req.body;
+    if (!userId) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
     }
-    catch (error) {
-        console.error("Error in updatePushToken:", error);
-        res.status(500).json({ message: "Internal server error" });
+    if (!pushToken) {
+        res.status(400).json({ message: "Push token is required" });
+        return;
     }
-});
-exports.updatePushToken = updatePushToken;
+    const user = yield user_model_1.default.findByIdAndUpdate(userId, { pushToken }, { new: true });
+    if (!user) {
+        res.status(404).json({ message: "User not found" });
+        return;
+    }
+    res.status(200).json({
+        message: "Push token updated successfully",
+    });
+}));

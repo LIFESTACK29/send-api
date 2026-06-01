@@ -8,27 +8,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendOtpEmail = void 0;
-const nodemailer_1 = __importDefault(require("nodemailer"));
-const transport = nodemailer_1.default.createTransport({
-    host: "sandbox.smtp.mailtrap.io",
-    port: 2525,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD,
-    },
-});
+const resend_1 = require("resend");
+const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 /**
  * Send OTP verification email
  */
 const sendOtpEmail = (to, otpCode) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        yield transport.sendMail({
-            from: '"RahaSend" <noreply@rahasend.com>',
+        const { data, error } = yield resend.emails.send({
+            from: "RahaSend <noreply@shutupnrave.com.ng>",
             to,
             subject: "Your RahaSend Verification Code",
             html: `
@@ -48,10 +38,11 @@ const sendOtpEmail = (to, otpCode) => __awaiter(void 0, void 0, void 0, function
                 </div>
             `,
         });
-        console.log(`✅ OTP email sent to ${to}`);
+        if (error) {
+            throw new Error("Failed to send verification email");
+        }
     }
     catch (error) {
-        console.error("❌ Failed to send OTP email:", error);
         throw new Error("Failed to send verification email");
     }
 });

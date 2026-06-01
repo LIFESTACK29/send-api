@@ -19,4 +19,5 @@ router.post("/resolve-account", wallet_controller_1.resolveAccount);
 router.post("/bank-account", wallet_controller_1.saveBankAccount);
 router.get("/bank-account", wallet_controller_1.getBankAccount);
 router.post("/withdraw", wallet_controller_1.withdraw);
+router.post("/admin/reset", wallet_controller_1.resetWallet);
 exports.default = router;

@@ -65,32 +65,24 @@ const getFirebaseCredential = () => {
 try {
     if (!admin.apps.length) {
         const serviceAccount = getFirebaseCredential();
-        if (!serviceAccount) {
-            console.warn("Firebase Admin not initialized: missing FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, or FIREBASE_PRIVATE_KEY in environment.");
-        }
-        else {
+        if (serviceAccount) {
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount),
             });
-            console.log(`✅ Firebase Admin initialized for: ${serviceAccount.projectId}`);
         }
     }
 }
 catch (error) {
-    console.error("❌ Error initializing Firebase Admin:", error);
 }
 /**
  * Send push notification to a specific user
  */
 const sendPushNotification = (userId, payload) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        if (!admin.apps.length) {
-            console.warn(`[Notification] Skip: Firebase Admin not initialized for user ${userId}`);
+        if (!admin.apps.length)
             return;
-        }
         const user = yield user_model_1.default.findById(userId);
         if (!user || !user.pushToken) {
-            console.log(`[Notification] Skip: No push token for user ${userId}`);
             return;
         }
         const message = {
@@ -118,13 +110,10 @@ const sendPushNotification = (userId, payload) => __awaiter(void 0, void 0, void
             },
         };
         const response = yield admin.messaging().send(message);
-        console.log(`[Notification] Sent to ${userId}. Response: ${response}`);
         return response;
     }
     catch (error) {
-        console.error(`[Notification] Error sending to ${userId}:`, error.message);
         if (error.code === "messaging/registration-token-not-registered") {
-            console.warn(`[Notification] Token for ${userId} is invalid. Clearing it.`);
             yield user_model_1.default.findByIdAndUpdate(userId, { $unset: { pushToken: "" } });
         }
     }

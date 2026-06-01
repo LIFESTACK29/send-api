@@ -1,11 +1,9 @@
 import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import User from "../models/user.model";
 import { AuthRequest, AuthPayload } from "../types/user.type";
 import { isTokenDenied } from "../utils/token-denylist.util";
-import {
-    getUserAccessState,
-    syncUserOnboardingState,
-} from "../services/onboarding.service";
+import { getUserAccessState } from "../services/onboarding.service";
 
 export const authenticate = (
     req: AuthRequest,
@@ -103,7 +101,7 @@ export const requireActiveRiderAccess = async (
             return;
         }
 
-        const user = await syncUserOnboardingState(req.user.userId);
+        const user = await User.findById(req.user.userId);
 
         if (!user) {
             res.status(404).json({ message: "User not found" });
@@ -116,14 +114,12 @@ export const requireActiveRiderAccess = async (
             res.status(403).json({
                 code: "RIDER_HOME_LOCKED",
                 message:
-                    accessState.nextStep === "email_otp"
+                    accessState.accessStatus === "email_verification_required"
                         ? "Email verification required"
                         : "Complete rider onboarding to continue",
                 canAccessHome: accessState.canAccessHome,
-                riderStatus: accessState.riderStatus,
-                onboardingStage: accessState.onboardingStage,
-                verificationStatus: accessState.verificationStatus,
-                nextStep: accessState.nextStep,
+                isOnboarded: user.isOnboarded,
+                accessStatus: accessState.accessStatus,
             });
             return;
         }

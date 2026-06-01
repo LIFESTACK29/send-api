@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initiateTransfer = exports.createTransferRecipient = exports.resolveAccountNumber = exports.listBanks = exports.verifyTransaction = exports.createDedicatedVirtualAccount = exports.assignDedicatedVirtualAccount = exports.createCustomer = void 0;
+exports.verifyTransfer = exports.getPlatformBalance = exports.initiateTransfer = exports.createTransferRecipient = exports.resolveAccountNumber = exports.listBanks = exports.verifyTransaction = exports.createDedicatedVirtualAccount = exports.assignDedicatedVirtualAccount = exports.createCustomer = void 0;
 const axios_1 = __importDefault(require("axios"));
 const PAYSTACK_BASE_URL = "https://api.paystack.co";
 const paystackApi = axios_1.default.create({
@@ -39,7 +39,7 @@ exports.createCustomer = createCustomer;
  * Assign a Dedicated Virtual Account (combined customer/DVA creation)
  */
 const assignDedicatedVirtualAccount = (payload) => __awaiter(void 0, void 0, void 0, function* () {
-    const { data } = yield paystackApi.post("/dedicated_account/assign", Object.assign(Object.assign({}, payload), { preferred_bank: payload.preferred_bank || "test-bank", country: "NG" }));
+    const { data } = yield paystackApi.post("/dedicated_account/assign", Object.assign(Object.assign({}, payload), { preferred_bank: payload.preferred_bank || "wema-bank", country: "NG" }));
     return data;
 });
 exports.assignDedicatedVirtualAccount = assignDedicatedVirtualAccount;
@@ -49,7 +49,7 @@ exports.assignDedicatedVirtualAccount = assignDedicatedVirtualAccount;
 const createDedicatedVirtualAccount = (customerCode, preferredBank) => __awaiter(void 0, void 0, void 0, function* () {
     const { data } = yield paystackApi.post("/dedicated_account", {
         customer: customerCode,
-        preferred_bank: "test-bank", // Default for test/live
+        preferred_bank: preferredBank || "wema-bank",
     });
     return data;
 });
@@ -111,6 +111,22 @@ recipientCode, reason, reference) => __awaiter(void 0, void 0, void 0, function*
     return data;
 });
 exports.initiateTransfer = initiateTransfer;
+/**
+ * Check Paystack platform balance
+ */
+const getPlatformBalance = () => __awaiter(void 0, void 0, void 0, function* () {
+    const { data } = yield paystackApi.get("/balance");
+    return data;
+});
+exports.getPlatformBalance = getPlatformBalance;
+/**
+ * Verify a Paystack transfer by reference
+ */
+const verifyTransfer = (reference) => __awaiter(void 0, void 0, void 0, function* () {
+    const { data } = yield paystackApi.get(`/transfer/verify/${reference}`);
+    return data;
+});
+exports.verifyTransfer = verifyTransfer;
 exports.default = {
     createCustomer: exports.createCustomer,
     createDedicatedVirtualAccount: exports.createDedicatedVirtualAccount,
@@ -120,4 +136,6 @@ exports.default = {
     resolveAccountNumber: exports.resolveAccountNumber,
     createTransferRecipient: exports.createTransferRecipient,
     initiateTransfer: exports.initiateTransfer,
+    getPlatformBalance: exports.getPlatformBalance,
+    verifyTransfer: exports.verifyTransfer,
 };

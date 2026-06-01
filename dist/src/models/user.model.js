@@ -52,15 +52,22 @@ const AddressSchema = new mongoose_1.Schema({
     location: { type: String, required: true },
     landmark: { type: String },
 });
+const RiderDetailsSchema = new mongoose_1.Schema({
+    nin: { type: String, required: true },
+    vehicleType: { type: String, required: true },
+    profileImage: { type: String, required: true },
+    submittedAt: { type: Date, default: Date.now },
+});
 const UserSchema = new mongoose_1.Schema({
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
+    middleName: { type: String },
     email: { type: String, required: true, unique: true },
     phoneNumber: { type: String, required: true },
     password: { type: String, required: true, select: false },
     role: {
         type: String,
-        enum: ["customer", "rider", "admin"],
+        enum: ["customer", "rider", "admin", "keke_rider", "operations"],
         required: true,
     },
     isOnboarded: { type: Boolean, default: false },
@@ -77,43 +84,27 @@ const UserSchema = new mongoose_1.Schema({
     },
     addresses: { type: [AddressSchema], default: [] },
     pushToken: { type: String },
-    // Rider-specific fields
-    riderStatus: {
-        type: String,
-        enum: [
-            "inactive",
-            "incomplete",
-            "pending_verification",
-            "active",
-            "rejected",
-        ],
-        default: "inactive",
-    },
-    onboardingStage: {
-        type: String,
-        enum: [
-            "email_pending",
-            "profile_pending",
-            "vehicle_pending",
-            "documents_pending",
-            "review_pending",
-            "pending_admin_approval",
-            "approved",
-            "rejected",
-        ],
-        default: "email_pending",
-    },
-    verificationStatus: {
-        type: String,
-        enum: ["not_submitted", "pending", "approved", "rejected"],
-        default: "not_submitted",
-    },
-    profileImageUrl: { type: String },
-    verificationNotes: { type: String },
+    riderDetails: RiderDetailsSchema,
     walletProvisioningStatus: {
         type: String,
         enum: ["not_started", "creating", "active", "failed"],
         default: "not_started",
+    },
+    kekeRiderProfile: {
+        campusId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Campus" },
+        onboardedBy: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
+        onboardedAt: { type: Date },
+        tricycleIdentifier: { type: String },
+        profileImage: { type: String },
+        notes: { type: String },
+        status: {
+            type: String,
+            enum: ["PENDING_BANK_SETUP", "ACTIVE", "DEACTIVATED"],
+            default: "PENDING_BANK_SETUP",
+        },
+        bankAccountVerifiedAt: { type: Date },
+        deactivatedAt: { type: Date },
+        deactivationReason: { type: String },
     },
 }, { timestamps: true });
 UserSchema.index({ currentLocation: "2dsphere" }, {
