@@ -19,14 +19,14 @@ export const getAllRidersForAdmin: RequestHandler = CatchAsync(
         };
 
         if (status === "pending") {
-            query.isOnboarded = false;
+            query.riderKycApproved = false;
         } else if (status === "approved") {
-            query.isOnboarded = true;
+            query.riderKycApproved = true;
         }
 
         const riders = await User.find(query)
             .select(
-                "firstName lastName email phoneNumber isOnboarded riderDetails createdAt updatedAt"
+                "firstName lastName email phoneNumber riderKycApproved riderDetails createdAt updatedAt"
             )
             .limit(100)
             .sort({ createdAt: -1 });
@@ -37,7 +37,7 @@ export const getAllRidersForAdmin: RequestHandler = CatchAsync(
             lastName: rider.lastName,
             email: rider.email,
             phoneNumber: rider.phoneNumber,
-            isOnboarded: rider.isOnboarded,
+            riderKycApproved: rider.riderKycApproved,
             riderDetails: {
                 nin: rider.riderDetails?.nin,
                 vehicleType: rider.riderDetails?.vehicleType,
@@ -88,7 +88,7 @@ export const getRiderVerificationDetail: RequestHandler = CatchAsync(
                 lastName: rider.lastName,
                 email: rider.email,
                 phoneNumber: rider.phoneNumber,
-                isOnboarded: rider.isOnboarded,
+                riderKycApproved: rider.riderKycApproved,
                 riderDetails: {
                     nin: rider.riderDetails.nin,
                     vehicleType: rider.riderDetails.vehicleType,
@@ -138,9 +138,9 @@ export const verifyRider: RequestHandler = CatchAsync(
         }
 
         if (approved) {
-            rider.isOnboarded = true;
+            rider.riderKycApproved = true;
         } else {
-            rider.isOnboarded = false;
+            rider.riderKycApproved = false;
         }
 
         await rider.save();
@@ -154,7 +154,7 @@ export const verifyRider: RequestHandler = CatchAsync(
                 : "Rider rejected",
             data: {
                 userId: rider._id,
-                isOnboarded: rider.isOnboarded,
+                riderKycApproved: rider.riderKycApproved,
                 accessState,
             },
         });

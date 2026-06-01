@@ -44,6 +44,7 @@ export interface IUser extends Document {
     pushToken?: string;
     createdAt: Date;
     isOnboarded: boolean;
+    riderKycApproved?: boolean;
     updatedAt: Date;
     riderDetails?: IRiderDetails;
     walletProvisioningStatus?: "not_started" | "creating" | "active" | "failed";
@@ -78,6 +79,7 @@ const UserSchema: Schema = new Schema(
             required: true,
         },
         isOnboarded: { type: Boolean, default: false },
+        riderKycApproved: { type: Boolean, default: false },
         isOnline: { type: Boolean, default: false },
         lastLocationUpdate: { type: Date },
         currentLocation: {
