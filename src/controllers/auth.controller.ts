@@ -67,13 +67,16 @@ const buildUserResponse = async (user: any) => {
         accessState,
     };
 
-    // Include rider details if user is a rider
-    if (user.role === "rider" && user.riderDetails) {
-        response.riderDetails = {
-            nin: user.riderDetails.nin,
-            vehicleType: user.riderDetails.vehicleType,
-            submittedAt: user.riderDetails.submittedAt,
-        };
+    // Include rider-specific fields
+    if (user.role === "rider") {
+        response.riderKycApproved = user.riderKycApproved ?? false;
+        if (user.riderDetails) {
+            response.riderDetails = {
+                nin: user.riderDetails.nin,
+                vehicleType: user.riderDetails.vehicleType,
+                submittedAt: user.riderDetails.submittedAt,
+            };
+        }
     }
 
     return response;
