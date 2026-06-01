@@ -236,7 +236,7 @@ const createMatchRequestResponse = (
 
 const buildRiderPreview = async (riderId: string) => {
     const riderUser = await User.findById(riderId).select(
-        "firstName lastName phoneNumber riderDetails isOnboarded",
+        "firstName lastName phoneNumber riderDetails riderKycApproved",
     );
     if (!riderUser) return null;
 
@@ -250,7 +250,7 @@ const buildRiderPreview = async (riderId: string) => {
         lastName: riderUser.lastName,
         fullName: `${riderUser.firstName} ${riderUser.lastName}`,
         profileImage: riderUser.riderDetails?.profileImage || null,
-        isOnboarded: riderUser.isOnboarded,
+        riderKycApproved: riderUser.riderKycApproved,
         phoneNumber: riderUser.phoneNumber || "",
         vehicle: riderVehicle
             ? {
@@ -272,7 +272,7 @@ const findNearbyActiveRiders = async (
     User.find({
         role: "rider",
         isOnline: true,
-        isOnboarded: true,
+        riderKycApproved: true,
         currentLocation: {
             $nearSphere: {
                 $geometry: {
@@ -288,7 +288,7 @@ const findAllActiveRiders = async (excludedRiderIds: string[] = []) =>
     User.find({
         role: "rider",
         isOnline: true,
-        isOnboarded: true,
+        riderKycApproved: true,
         ...(excludedRiderIds.length > 0
             ? { _id: { $nin: excludedRiderIds } }
             : {}),
@@ -771,7 +771,7 @@ export const getNearbyRiders = async (
         const riders = await User.find({
             role: "rider",
             isOnline: true,
-            isOnboarded: true,
+            riderKycApproved: true,
             currentLocation: {
                 $nearSphere: {
                     $geometry: {
@@ -791,7 +791,7 @@ export const getNearbyRiders = async (
             lastName: rider.lastName,
             fullName: `${rider.firstName} ${rider.lastName}`,
             profileImage: rider.riderDetails?.profileImage || null,
-            isOnboarded: rider.isOnboarded,
+            riderKycApproved: rider.riderKycApproved,
             isOnline: true,
             location: {
                 lat: rider.currentLocation?.coordinates?.[1],
@@ -937,7 +937,7 @@ export const getRiderHomeSummary = async (
                 },
                 rider: {
                     isOnline: rider.isOnline,
-                    isOnboarded: rider.isOnboarded,
+                    riderKycApproved: rider.riderKycApproved,
                     hasLocation:
                         Number.isFinite(riderLat) && Number.isFinite(riderLng),
                     location:
@@ -1041,7 +1041,7 @@ export const acceptDelivery = async (
         const riderUser = await User.findOne({
             _id: riderId,
             role: "rider",
-            isOnboarded: true,
+            riderKycApproved: true,
         }).select("_id");
         if (!riderUser) {
             res.status(403).json({
@@ -1353,7 +1353,7 @@ export const getMyDeliveries = async (
             .limit(limitNum > 0 ? limitNum : 0)
             .populate(
                 "riderId",
-                "firstName lastName riderDetails phoneNumber isOnboarded",
+                "firstName lastName riderDetails phoneNumber riderKycApproved",
             );
 
         const mobileDeliveries = deliveries.map((delivery: any) => ({
@@ -1384,7 +1384,7 @@ export const getMyDeliveries = async (
                       id: delivery.riderId._id,
                       fullName: `${delivery.riderId.firstName} ${delivery.riderId.lastName}`,
                       profileImage: delivery.riderId.riderDetails?.profileImage || null,
-                      isOnboarded: delivery.riderId.isOnboarded,
+                      riderKycApproved: delivery.riderId.riderKycApproved,
                       phoneNumber: delivery.riderId.phoneNumber || "",
                   }
                 : null,

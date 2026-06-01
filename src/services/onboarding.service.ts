@@ -33,11 +33,12 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
         };
     }
 
+    // Rider-specific flow
     if (!user.isOnboarded) {
         return {
             onboardingRequired: true,
             canAccessHome: false,
-            accessStatus: "onboarding_incomplete",
+            accessStatus: "email_verification_required",
             isOnboarded: false,
         };
     }
@@ -47,7 +48,16 @@ export const getUserAccessState = async (user: IUser): Promise<UserAccessState> 
             onboardingRequired: true,
             canAccessHome: false,
             accessStatus: "onboarding_incomplete",
-            isOnboarded: false,
+            isOnboarded: true,
+        };
+    }
+
+    if (!user.riderKycApproved) {
+        return {
+            onboardingRequired: true,
+            canAccessHome: false,
+            accessStatus: "pending_admin_approval",
+            isOnboarded: true,
         };
     }
 
